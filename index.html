@@ -2,29 +2,111 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#080b12">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Hyperliquid Explorer</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon-192.svg">
+  <link rel="apple-touch-icon" href="icons/icon-192.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <nav>
-    <div class="logo">Hyperliquid</div>
-    <a data-page="market" class="active">Market</a>
-    <a data-page="account">Account</a>
-    <a data-page="orders">Orders</a>
-    <a data-page="trades">Trades</a>
-    <a data-page="funding">Funding</a>
-  </nav>
-  <main>
-    <div class="wallet-bar">
-      <select id="walletSelect"><option value="">-- Select wallet --</option></select>
-      <input id="walletInput" placeholder="Add wallet address (0x...)">
-      <input id="walletLabel" placeholder="Label (optional)">
-      <button id="addWalletBtn">Add</button>
-      <button id="removeWalletBtn">Remove</button>
+  <!-- Ambient glow elements -->
+  <div class="ambient-glow glow-1"></div>
+  <div class="ambient-glow glow-2"></div>
+
+  <!-- Top Bar -->
+  <header id="topBar">
+    <div class="top-bar-left">
+      <div class="top-bar-logo">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+          <path d="M4 4h6v6H4V4zm10 0h6v6h-6V4zM4 14h6v6H4v-6zm10 2a4 4 0 108 0 4 4 0 00-8 0z" fill="currentColor" opacity="0.9"/>
+        </svg>
+      </div>
+      <div class="top-bar-title">
+        <span class="title-text">Hyperliquid</span>
+        <span class="title-badge">EXPLORER</span>
+      </div>
     </div>
+    <div class="top-bar-right">
+      <div id="liveIndicator" class="live-indicator">
+        <span class="live-dot"></span>
+        <span class="live-text">LIVE</span>
+      </div>
+      <button id="walletChip" class="wallet-chip" aria-label="Select wallet">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 10h20"/><circle cx="18" cy="15" r="1.5" fill="currentColor"/></svg>
+        <span id="walletChipText"></span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Wallet Modal -->
+  <div id="walletModal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-handle"></div>
+      <div class="modal-header">
+        <h3>Manage Wallets</h3>
+        <button class="modal-close" id="walletModalClose">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div id="walletList" class="wallet-list"></div>
+      <div class="wallet-add-form">
+        <div class="form-group">
+          <label class="form-label">Wallet Address</label>
+          <input id="walletInput" placeholder="0x..." autocomplete="off" spellcheck="false">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Label (optional)</label>
+          <input id="walletLabel" placeholder="My Wallet">
+        </div>
+        <button id="addWalletBtn" class="btn-primary">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Add Wallet
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Content -->
+  <main>
     <div id="content"></div>
+    <div id="lastUpdated" class="last-updated"></div>
   </main>
+
+  <!-- Bottom Tab Bar -->
+  <nav id="tabBar">
+    <a data-page="market" class="tab active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      <span>Market</span>
+    </a>
+    <a data-page="account" class="tab">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 10h20"/></svg>
+      <span>Account</span>
+    </a>
+    <a data-page="orders" class="tab">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      <span>Orders</span>
+    </a>
+    <a data-page="trades" class="tab">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+      <span>Trades</span>
+    </a>
+    <a data-page="funding" class="tab">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+      <span>Funding</span>
+    </a>
+  </nav>
+
+  <!-- Toast Container -->
+  <div id="toastContainer" class="toast-container"></div>
+
   <script src="api.js"></script>
   <script src="app.js"></script>
 </body>

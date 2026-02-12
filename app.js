@@ -14,174 +14,605 @@ function saveWallets(wallets) {
 let wallet = getWallets()[0]?.address || "";
 const content = () => document.getElementById("content");
 
-function renderWalletSelect() {
-  const select = document.getElementById("walletSelect");
-  const wallets = getWallets();
-  select.innerHTML = wallets.map((w) =>
-    `<option value="${w.address}" ${w.address === wallet ? "selected" : ""}>${w.label ? w.label + " — " : ""}${w.address.slice(0, 6)}...${w.address.slice(-4)}</option>`
-  ).join("");
+// --- Cache per wallet ---
+// Keys are scoped: hl_cache_{walletAddr}_{pageKey}
+function getCacheKey(page, addr) {
+  return `hl_cache_${(addr || wallet).slice(0,10)}_${page}`;
 }
 
-function setLoading() {
-  content().innerHTML = '<p class="loading">Loading...</p>';
+function clearWalletCache(addr) {
+  ["account", "orders", "trades", "funding"].forEach(page => {
+    localStorage.removeItem(getCacheKey(page, addr));
+  });
 }
 
-function setError(msg) {
-  content().innerHTML = `<p class="error">${msg}</p>`;
+function getCache(page) {
+  try {
+    const raw = localStorage.getItem(getCacheKey(page));
+    if (!raw) return null;
+    const { data, ts } = JSON.parse(raw);
+    // Cache valid for 5 minutes
+    if (Date.now() - ts > 5 * 60 * 1000) return null;
+    return data;
+  } catch { return null; }
 }
 
+function setCache(page, data) {
+  try {
+    localStorage.setItem(getCacheKey(page), JSON.stringify({ data, ts: Date.now() }));
+  } catch { /* quota exceeded, ignore */ }
+}
+
+// Global market cache (not wallet-scoped)
+function getMarketCache() {
+  try {
+    const raw = localStorage.getItem("hl_cache_market");
+    if (!raw) return null;
+    const { data, ts } = JSON.parse(raw);
+    if (Date.now() - ts > 2 * 60 * 1000) return null;
+    return data;
+  } catch { return null; }
+}
+
+function setMarketCache(data) {
+  try {
+    localStorage.setItem("hl_cache_market", JSON.stringify({ data, ts: Date.now() }));
+  } catch {}
+}
+
+// --- Toast ---
+function showToast(msg, type = "info") {
+  const container = document.getElementById("toastContainer");
+  const el = document.createElement("div");
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  container.appendChild(el);
+  setTimeout(() => { el.remove(); }, 3000);
+}
+
+// --- Skeleton ---
+function setSkeleton(count = 5) {
+  resetRendered();
+  content().innerHTML = `
+    <div class="skeleton lg"></div>
+    ${Array.from({length: count}, (_, i) =>
+      `<div class="skeleton" style="width:${55 + i * 8}%"></div>`
+    ).join("")}
+  `;
+}
+
+// --- Helpers ---
 function pnlClass(v) {
   const n = parseFloat(v);
   return n > 0 ? "pos" : n < 0 ? "neg" : "";
 }
 
+function fmt(v, d = 2) {
+  const n = parseFloat(v);
+  return isNaN(n) ? "—" : n.toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+}
+
+function updateTimestamp() {
+  document.getElementById("lastUpdated").textContent = "Updated " + new Date().toLocaleTimeString();
+}
+
+// Thin loading bar at top when refreshing in background
+function showRefreshBar() {
+  if (document.getElementById("refreshBar")) return;
+  const bar = document.createElement("div");
+  bar.className = "refresh-bar";
+  bar.id = "refreshBar";
+  document.body.appendChild(bar);
+}
+
+function hideRefreshBar() {
+  document.getElementById("refreshBar")?.remove();
+}
+
+function coinDot() {
+  return '<span class="coin-dot"></span>';
+}
+
+// --- Wallet ---
+function renderWalletChip() {
+  const w = getWallets().find(w => w.address === wallet);
+  const chip = document.getElementById("walletChipText");
+  if (w) {
+    chip.textContent = (w.label ? w.label + " · " : "") + w.address.slice(0, 6) + "…" + w.address.slice(-4);
+  } else {
+    chip.textContent = "Select wallet";
+  }
+}
+
+function renderWalletModal() {
+  const wallets = getWallets();
+  const list = document.getElementById("walletList");
+  list.innerHTML = wallets.map(w => `
+    <div class="wallet-item ${w.address === wallet ? "active" : ""}" data-addr="${w.address}">
+      <div>
+        <div class="wallet-item-label">${w.label || "Wallet"}</div>
+        <div class="wallet-item-info">${w.address.slice(0, 10)}…${w.address.slice(-6)}</div>
+      </div>
+      <div class="wallet-item-actions">
+        <button class="wallet-item-edit" data-edit="${w.address}" title="Rename">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M17 3a2.85 2.85 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+        </button>
+        ${wallets.length > 1 ? `<button class="wallet-item-remove" data-remove="${w.address}">&times;</button>` : ""}
+      </div>
+    </div>
+  `).join("");
+
+  list.querySelectorAll(".wallet-item").forEach(el => {
+    el.addEventListener("click", (e) => {
+      if (e.target.closest(".wallet-item-remove") || e.target.closest(".wallet-item-edit")) return;
+      clearWalletCache(el.dataset.addr);
+      wallet = el.dataset.addr;
+      renderWalletChip();
+      renderWalletModal();
+      closeWalletModal();
+      navigate(currentPage());
+    });
+  });
+
+  list.querySelectorAll(".wallet-item-remove").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const addr = btn.dataset.remove;
+      const ws = getWallets().filter(w => w.address !== addr);
+      if (!ws.length) return;
+      saveWallets(ws);
+      if (wallet === addr) wallet = ws[0].address;
+      renderWalletChip();
+      renderWalletModal();
+      showToast("Wallet removed");
+    });
+  });
+
+  list.querySelectorAll(".wallet-item-edit").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const addr = btn.dataset.edit;
+      const wallets = getWallets();
+      const w = wallets.find(w => w.address === addr);
+      if (!w) return;
+      const newLabel = prompt("Rename wallet:", w.label || "");
+      if (newLabel === null) return;
+      w.label = newLabel.trim();
+      saveWallets(wallets);
+      renderWalletChip();
+      renderWalletModal();
+      showToast("Wallet renamed", "success");
+    });
+  });
+}
+
+function openWalletModal() {
+  document.getElementById("walletModal").classList.remove("hidden");
+  renderWalletModal();
+}
+
+function closeWalletModal() {
+  document.getElementById("walletModal").classList.add("hidden");
+}
+
+// --- Diff helper: skip re-render if data unchanged ---
+function dataChanged(a, b) {
+  return JSON.stringify(a) !== JSON.stringify(b);
+}
+
+// Track if content already has a rendered page (not skeleton)
+let hasRendered = false;
+
+function setContent(html) {
+  const el = content();
+  if (!hasRendered) {
+    // First paint: animate cards in
+    el.innerHTML = `<div class="animate-in">${html}</div>`;
+    hasRendered = true;
+  } else {
+    // Update: no animation, just swap content
+    el.innerHTML = html;
+  }
+}
+
+function resetRendered() {
+  hasRendered = false;
+}
+
 // --- Pages ---
 
 async function showMarket() {
-  setLoading();
+  const cached = getMarketCache();
+  if (cached) {
+    renderMarket(cached);
+    showRefreshBar();
+  } else {
+    setSkeleton(8);
+  }
+
   try {
-    const [mids, meta] = await Promise.all([
-      fetchInfo("allMids"),
-      fetchInfo("meta"),
-    ]);
+    const [mids, meta] = await Promise.all([fetchInfo("allMids"), fetchInfo("meta")]);
     const universe = meta.universe || [];
-    const rows = universe.map((coin) => {
-      const mid = mids[coin.name] || "—";
-      return `<tr><td>${coin.name}</td><td>${mid}</td><td>${coin.szDecimals}</td></tr>`;
-    }).join("");
-    content().innerHTML = `
-      <h2>Market Prices</h2>
-      <table><thead><tr><th>Asset</th><th>Mid Price</th><th>Size Decimals</th></tr></thead>
-      <tbody>${rows}</tbody></table>`;
-  } catch (e) { setError(e.message); }
+    const rows = universe.map(coin => {
+      const mid = mids[coin.name];
+      return { name: coin.name, mid: mid ? parseFloat(mid) : null, szDec: coin.szDecimals };
+    });
+    if (!cached || dataChanged(cached, rows)) {
+      setMarketCache(rows);
+      renderMarket(rows);
+    }
+    updateTimestamp();
+  } catch (e) {
+    if (!cached) {
+      showToast(e.message, "error");
+      setContent(`<div class="empty-state">${e.message}</div>`);
+    }
+  } finally {
+    hideRefreshBar();
+  }
+}
+
+function renderMarket(rows, filter = "") {
+  const f = filter.toLowerCase();
+  const filtered = f ? rows.filter(r => r.name.toLowerCase().includes(f)) : rows;
+  const tbody = filtered.map((r, i) => `
+    <tr>
+      <td><span class="market-rank">${i + 1}</span></td>
+      <td><span class="coin-tag">${coinDot()}<strong>${r.name}</strong></span></td>
+      <td style="font-family:var(--font-mono)">${r.mid !== null ? fmt(r.mid, r.mid > 100 ? 2 : 4) : "—"}</td>
+      <td>${r.szDec}</td>
+    </tr>
+  `).join("");
+
+  setContent(`
+    <div class="search-wrap">
+      <input class="search-input" placeholder="Search assets..." value="${filter}" id="marketSearch">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    </div>
+    <div class="card">
+      <div class="card-title">All Markets (${filtered.length})</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>#</th><th>Asset</th><th>Mid Price</th><th>Sz Dec</th></tr></thead>
+          <tbody>${tbody}</tbody>
+        </table>
+      </div>
+    </div>
+  `);
+  document.getElementById("marketSearch").addEventListener("input", e => renderMarket(rows, e.target.value));
 }
 
 async function showAccount() {
-  setLoading();
+  const cached = getCache("account");
+  if (cached) {
+    renderAccount(cached);
+    showRefreshBar();
+  } else {
+    setSkeleton(6);
+  }
+
   try {
     const [perps, spot] = await Promise.all([
       fetchInfo("clearinghouseState", { user: wallet }),
       fetchInfo("spotClearinghouseState", { user: wallet }),
     ]);
-    const mb = perps.marginSummary || {};
-    const spotBalances = (spot.balances || []).filter(
-      (b) => parseFloat(b.total) > 0
-    );
-    const positions = (perps.assetPositions || []).filter(
-      (p) => parseFloat(p.position.szi) !== 0
-    );
+    const data = { perps, spot };
+    if (!cached || dataChanged(cached, data)) {
+      setCache("account", data);
+      renderAccount(data);
+    }
+    updateTimestamp();
+  } catch (e) {
+    if (!cached) {
+      showToast(e.message, "error");
+      setContent(`<div class="empty-state">${e.message}</div>`);
+    }
+  } finally {
+    hideRefreshBar();
+  }
+}
 
-    const spotRows = spotBalances.map((b) =>
-      `<tr><td>${b.coin}</td><td>${b.total}</td><td>${b.hold}</td></tr>`
-    ).join("");
+function renderAccount({ perps, spot }) {
+  const mb = perps.marginSummary || {};
+  const spotBalances = (spot.balances || []).filter(b => parseFloat(b.total) > 0);
+  const positions = (perps.assetPositions || []).filter(p => parseFloat(p.position.szi) !== 0);
+  const totalPnl = positions.reduce((s, p) => s + parseFloat(p.position.unrealizedPnl || 0), 0);
 
-    const posRows = positions.map((p) => {
-      const pos = p.position;
-      return `<tr>
-        <td>${pos.coin}</td>
-        <td class="${pnlClass(pos.szi)}">${pos.szi}</td>
-        <td>${pos.entryPx}</td>
-        <td class="${pnlClass(pos.unrealizedPnl)}">${parseFloat(pos.unrealizedPnl).toFixed(2)}</td>
-        <td>${pos.leverage?.value || "—"}x</td>
-      </tr>`;
-    }).join("");
+  setContent(`
+    <div class="card">
+      <div class="card-title">Account Overview</div>
+      <div class="stat-row">
+        <div class="stat-chip">
+          <div class="label">Account Value</div>
+          <div class="value">$${fmt(mb.accountValue)}</div>
+        </div>
+        <div class="stat-chip">
+          <div class="label">Unrealized PnL</div>
+          <div class="value ${pnlClass(totalPnl)}">$${fmt(totalPnl)}</div>
+        </div>
+        <div class="stat-chip">
+          <div class="label">Margin Used</div>
+          <div class="value">$${fmt(mb.totalMarginUsed)}</div>
+        </div>
+        <div class="stat-chip">
+          <div class="label">Withdrawable</div>
+          <div class="value">$${fmt(perps.withdrawable)}</div>
+        </div>
+      </div>
+    </div>
 
-    content().innerHTML = `
-      <h2>Spot Balances</h2>
-      ${spotBalances.length ? `<table><thead><tr><th>Coin</th><th>Total</th><th>In Use</th></tr></thead><tbody>${spotRows}</tbody></table>` : '<p class="loading">No spot balances</p>'}
-      <h2 style="margin-top:1.5rem">Perps Account</h2>
-      <table><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody>
-        <tr><td>Account Value</td><td>${mb.accountValue}</td></tr>
-        <tr><td>Total Margin Used</td><td>${mb.totalMarginUsed}</td></tr>
-        <tr><td>Total Notional</td><td>${mb.totalNtlPos}</td></tr>
-        <tr><td>Withdrawable</td><td>${perps.withdrawable}</td></tr>
-      </tbody></table>
-      <h2 style="margin-top:1.5rem">Positions</h2>
-      ${positions.length ? `<table><thead><tr><th>Coin</th><th>Size</th><th>Entry</th><th>uPnL</th><th>Leverage</th></tr></thead><tbody>${posRows}</tbody></table>` : '<p class="loading">No open positions</p>'}`;
-  } catch (e) { setError(e.message); }
+    ${positions.length ? `
+    <div class="card">
+      <div class="card-title">Positions (${positions.length})</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Coin</th><th>Size</th><th>Entry</th><th>uPnL</th><th>Lev</th></tr></thead>
+          <tbody>${positions.map(p => {
+            const pos = p.position;
+            return `<tr>
+              <td><span class="coin-tag">${coinDot()}<strong>${pos.coin}</strong></span></td>
+              <td class="${pnlClass(pos.szi)}" style="font-family:var(--font-mono)">${pos.szi}</td>
+              <td style="font-family:var(--font-mono)">${fmt(pos.entryPx, 2)}</td>
+              <td class="${pnlClass(pos.unrealizedPnl)}" style="font-family:var(--font-mono)">$${fmt(pos.unrealizedPnl)}</td>
+              <td>${pos.leverage?.value || "—"}x</td>
+            </tr>`;
+          }).join("")}</tbody>
+        </table>
+      </div>
+    </div>` : ""}
+
+    ${spotBalances.length ? `
+    <div class="card">
+      <div class="card-title">Spot Balances</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Coin</th><th>Total</th><th>In Use</th></tr></thead>
+          <tbody>${spotBalances.map(b => `<tr>
+            <td><span class="coin-tag">${coinDot()}<strong>${b.coin}</strong></span></td>
+            <td style="font-family:var(--font-mono)">${b.total}</td>
+            <td style="font-family:var(--font-mono)">${b.hold}</td>
+          </tr>`).join("")}</tbody>
+        </table>
+      </div>
+    </div>` : ""}
+
+    ${!positions.length && !spotBalances.length ? '<div class="empty-state">No positions or balances</div>' : ""}
+  `);
 }
 
 async function showOrders() {
-  setLoading();
+  const cached = getCache("orders");
+  if (cached) {
+    renderOrders(cached);
+    showRefreshBar();
+  } else {
+    setSkeleton(4);
+  }
+
   try {
-    const data = await fetchInfo("openOrders", { user: wallet });
-    if (!data.length) {
-      content().innerHTML = '<h2>Open Orders</h2><p class="loading">No open orders</p>';
-      return;
+    const [openOrders, fills] = await Promise.all([
+      fetchInfo("openOrders", { user: wallet }),
+      fetchInfo("userFills", { user: wallet }),
+    ]);
+    const data = { openOrders, fills: fills.slice(0, 30) };
+    if (!cached || dataChanged(cached, data)) {
+      setCache("orders", data);
+      renderOrders(data);
     }
-    const rows = data.map((o) =>
-      `<tr><td>${o.coin}</td><td>${o.side === "B" ? '<span class="pos">Buy</span>' : '<span class="neg">Sell</span>'}</td><td>${o.limitPx}</td><td>${o.sz}</td><td>${o.oid}</td></tr>`
-    ).join("");
-    content().innerHTML = `
-      <h2>Open Orders</h2>
-      <table><thead><tr><th>Coin</th><th>Side</th><th>Price</th><th>Size</th><th>OID</th></tr></thead>
-      <tbody>${rows}</tbody></table>`;
-  } catch (e) { setError(e.message); }
+    updateTimestamp();
+  } catch (e) {
+    if (!cached) {
+      showToast(e.message, "error");
+      setContent(`<div class="empty-state">${e.message}</div>`);
+    }
+  } finally {
+    hideRefreshBar();
+  }
+}
+
+function renderOrders({ openOrders, fills }, activeTab = "open") {
+  const openContent = openOrders.length ? `
+    <div class="table-wrap"><table>
+      <thead><tr><th>Coin</th><th>Side</th><th>Price</th><th>Size</th><th>OID</th></tr></thead>
+      <tbody>${openOrders.map(o => `<tr>
+        <td><span class="coin-tag">${coinDot()}<strong>${o.coin}</strong></span></td>
+        <td><span class="badge ${o.side === 'B' ? 'buy' : 'sell'}">${o.side === 'B' ? 'Buy' : 'Sell'}</span></td>
+        <td style="font-family:var(--font-mono)">${o.limitPx}</td>
+        <td style="font-family:var(--font-mono)">${o.sz}</td>
+        <td style="font-size:0.65rem;color:var(--text-dim);font-family:var(--font-mono)">${o.oid}</td>
+      </tr>`).join("")}</tbody>
+    </table></div>` : '<div class="empty-state">No open orders</div>';
+
+  const historyContent = fills.length ? `
+    <div class="table-wrap"><table>
+      <thead><tr><th>Coin</th><th>Side</th><th>Price</th><th>Size</th><th>Fee</th><th>Time</th></tr></thead>
+      <tbody>${fills.map(f => `<tr>
+        <td><span class="coin-tag">${coinDot()}<strong>${f.coin}</strong></span></td>
+        <td><span class="badge ${f.side === 'B' ? 'buy' : 'sell'}">${f.side === 'B' ? 'Buy' : 'Sell'}</span></td>
+        <td style="font-family:var(--font-mono)">${f.px}</td>
+        <td style="font-family:var(--font-mono)">${f.sz}</td>
+        <td style="font-family:var(--font-mono)">${f.fee}</td>
+        <td style="font-size:0.68rem;color:var(--text-secondary)">${new Date(f.time).toLocaleString()}</td>
+      </tr>`).join("")}</tbody>
+    </table></div>` : '<div class="empty-state">No recent fills</div>';
+
+  setContent(`
+    <div class="tab-bar-inner">
+      <button class="tab-btn ${activeTab === 'open' ? 'active' : ''}" data-tab="open">Open (${openOrders.length})</button>
+      <button class="tab-btn ${activeTab === 'history' ? 'active' : ''}" data-tab="history">History (${fills.length})</button>
+    </div>
+    <div class="card">${activeTab === 'open' ? openContent : historyContent}</div>
+  `);
+
+  const data = { openOrders, fills };
+  content().querySelectorAll(".tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => renderOrders(data, btn.dataset.tab));
+  });
 }
 
 async function showTrades() {
-  setLoading();
+  const cached = getCache("trades");
+  if (cached) {
+    renderTrades(cached);
+    showRefreshBar();
+  } else {
+    setSkeleton(6);
+  }
+
   try {
     const data = await fetchInfo("userFills", { user: wallet });
-    const fills = data.slice(0, 50);
-    if (!fills.length) {
-      content().innerHTML = '<h2>Recent Trades</h2><p class="loading">No recent trades</p>';
-      return;
+    const fills = data.slice(0, 100);
+    if (!cached || dataChanged(cached, fills)) {
+      setCache("trades", fills);
+      renderTrades(fills);
     }
-    const rows = fills.map((f) =>
-      `<tr><td>${f.coin}</td><td>${f.side === "B" ? '<span class="pos">Buy</span>' : '<span class="neg">Sell</span>'}</td><td>${f.px}</td><td>${f.sz}</td><td>${f.fee}</td><td>${new Date(f.time).toLocaleString()}</td></tr>`
-    ).join("");
-    content().innerHTML = `
-      <h2>Recent Trades</h2>
-      <table><thead><tr><th>Coin</th><th>Side</th><th>Price</th><th>Size</th><th>Fee</th><th>Time</th></tr></thead>
-      <tbody>${rows}</tbody></table>`;
-  } catch (e) { setError(e.message); }
+    updateTimestamp();
+  } catch (e) {
+    if (!cached) {
+      showToast(e.message, "error");
+      setContent(`<div class="empty-state">${e.message}</div>`);
+    }
+  } finally {
+    hideRefreshBar();
+  }
+}
+
+function renderTrades(fills, activeCoin = "All") {
+  if (!fills.length) {
+    content().innerHTML = '<div class="empty-state">No recent trades</div>';
+    return;
+  }
+  const coins = [...new Set(fills.map(f => f.coin))];
+  const filtered = activeCoin === "All" ? fills : fills.filter(f => f.coin === activeCoin);
+
+  setContent(`
+    <div class="filter-chips">
+      <button class="filter-chip ${activeCoin === 'All' ? 'active' : ''}" data-coin="All">All</button>
+      ${coins.map(c => `<button class="filter-chip ${activeCoin === c ? 'active' : ''}" data-coin="${c}">${c}</button>`).join("")}
+    </div>
+    <div class="card">
+      <div class="card-title">Trades (${filtered.length})</div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Coin</th><th>Side</th><th>Price</th><th>Size</th><th>Fee</th><th>Time</th></tr></thead>
+        <tbody>${filtered.map(f => `<tr>
+          <td><span class="coin-tag">${coinDot()}<strong>${f.coin}</strong></span></td>
+          <td><span class="badge ${f.side === 'B' ? 'buy' : 'sell'}">${f.side === 'B' ? 'Buy' : 'Sell'}</span></td>
+          <td style="font-family:var(--font-mono)">${f.px}</td>
+          <td style="font-family:var(--font-mono)">${f.sz}</td>
+          <td style="font-family:var(--font-mono)">${f.fee}</td>
+          <td style="font-size:0.68rem;color:var(--text-secondary)">${new Date(f.time).toLocaleString()}</td>
+        </tr>`).join("")}</tbody>
+      </table></div>
+    </div>
+  `);
+  content().querySelectorAll(".filter-chip").forEach(chip => {
+    chip.addEventListener("click", () => renderTrades(fills, chip.dataset.coin));
+  });
 }
 
 async function showFunding() {
-  setLoading();
+  const cached = getCache("funding");
+  if (cached) {
+    renderFunding(cached);
+    showRefreshBar();
+  } else {
+    setSkeleton(6);
+  }
+
   try {
-    const data = await fetchInfo("userFunding", {
-      user: wallet,
-      startTime: Date.now() - 7 * 24 * 60 * 60 * 1000,
-    });
-    if (!data.length) {
-      content().innerHTML = '<h2>Funding History</h2><p class="loading">No funding payments</p>';
-      return;
+    const data = await fetchInfo("userFunding", { user: wallet, startTime: Date.now() - 7 * 24 * 60 * 60 * 1000 });
+    const entries = data.slice(0, 50);
+    if (!cached || dataChanged(cached, entries)) {
+      setCache("funding", entries);
+      renderFunding(entries);
     }
-    const rows = data.slice(0, 50).map((f) =>
-      `<tr><td>${f.coin}</td><td class="${pnlClass(f.usdc)}">${parseFloat(f.usdc).toFixed(4)}</td><td>${f.fundingRate}</td><td>${new Date(f.time).toLocaleString()}</td></tr>`
-    ).join("");
-    content().innerHTML = `
-      <h2>Funding History (7d)</h2>
-      <table><thead><tr><th>Coin</th><th>Payment</th><th>Rate</th><th>Time</th></tr></thead>
-      <tbody>${rows}</tbody></table>`;
-  } catch (e) { setError(e.message); }
+    updateTimestamp();
+  } catch (e) {
+    if (!cached) {
+      showToast(e.message, "error");
+      setContent(`<div class="empty-state">${e.message}</div>`);
+    }
+  } finally {
+    hideRefreshBar();
+  }
+}
+
+function renderFunding(entries) {
+  if (!entries.length) {
+    content().innerHTML = '<div class="empty-state">No funding payments in the last 7 days</div>';
+    updateTimestamp();
+    return;
+  }
+  const totalFunding = entries.reduce((s, f) => s + parseFloat(f.usdc || 0), 0);
+
+  setContent(`
+    <div class="card">
+      <div class="card-title">7-Day Funding Summary</div>
+      <div class="stat-row">
+        <div class="stat-chip">
+          <div class="label">Total Funding</div>
+          <div class="value ${pnlClass(totalFunding)}">$${fmt(totalFunding, 4)}</div>
+        </div>
+        <div class="stat-chip">
+          <div class="label">Payments</div>
+          <div class="value">${entries.length}</div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Funding History</div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Coin</th><th>Payment</th><th>Rate</th><th>Time</th></tr></thead>
+        <tbody>${entries.map(f => `<tr>
+          <td><span class="coin-tag">${coinDot()}<strong>${f.coin}</strong></span></td>
+          <td class="${pnlClass(f.usdc)}" style="font-family:var(--font-mono)">$${fmt(parseFloat(f.usdc), 4)}</td>
+          <td style="font-family:var(--font-mono)">${f.fundingRate}</td>
+          <td style="font-size:0.68rem;color:var(--text-secondary)">${new Date(f.time).toLocaleString()}</td>
+        </tr>`).join("")}</tbody>
+      </table></div>
+    </div>
+  `);
 }
 
 // --- Routing ---
-
 const pages = { market: showMarket, account: showAccount, orders: showOrders, trades: showTrades, funding: showFunding };
 
 function navigate(page) {
-  document.querySelectorAll("nav a").forEach((a) => a.classList.toggle("active", a.dataset.page === page));
+  resetRendered();
+  hideRefreshBar();
+  document.querySelectorAll("#tabBar .tab").forEach(a => a.classList.toggle("active", a.dataset.page === page));
   if (pages[page]) pages[page]();
 }
 
 function currentPage() {
-  return document.querySelector("nav a.active")?.dataset.page || "market";
+  return document.querySelector("#tabBar .tab.active")?.dataset.page || "market";
 }
 
+// --- Pull to Refresh ---
+let touchStart = 0;
+document.addEventListener("touchstart", e => { touchStart = e.touches[0].clientY; }, { passive: true });
+document.addEventListener("touchend", e => {
+  if (window.scrollY === 0 && e.changedTouches[0].clientY - touchStart > 80) {
+    // Force refresh: clear cache for current page
+    const page = currentPage();
+    if (page === "market") {
+      localStorage.removeItem("hl_cache_market");
+    } else {
+      localStorage.removeItem(getCacheKey(page));
+    }
+    navigate(page);
+    showToast("Refreshed", "success");
+  }
+}, { passive: true });
+
+// --- Init ---
 document.addEventListener("DOMContentLoaded", () => {
-  renderWalletSelect();
+  renderWalletChip();
 
-  document.querySelectorAll("nav a[data-page]").forEach((a) =>
-    a.addEventListener("click", () => navigate(a.dataset.page))
-  );
-
-  document.getElementById("walletSelect").addEventListener("change", (e) => {
-    wallet = e.target.value;
-    navigate(currentPage());
+  document.getElementById("walletChip").addEventListener("click", openWalletModal);
+  document.getElementById("walletModalClose").addEventListener("click", closeWalletModal);
+  document.getElementById("walletModal").addEventListener("click", e => {
+    if (e.target === e.currentTarget) closeWalletModal();
   });
 
   document.getElementById("addWalletBtn").addEventListener("click", () => {
@@ -189,24 +620,27 @@ document.addEventListener("DOMContentLoaded", () => {
     const label = document.getElementById("walletLabel").value.trim();
     if (!addr) return;
     const wallets = getWallets();
-    if (wallets.some((w) => w.address.toLowerCase() === addr.toLowerCase())) return;
+    if (wallets.some(w => w.address.toLowerCase() === addr.toLowerCase())) {
+      showToast("Wallet already exists", "error"); return;
+    }
     wallets.push({ address: addr, label: label || "" });
     saveWallets(wallets);
     wallet = addr;
-    renderWalletSelect();
     document.getElementById("walletInput").value = "";
     document.getElementById("walletLabel").value = "";
-    navigate(currentPage());
+    renderWalletChip();
+    renderWalletModal();
+    showToast("Wallet added", "success");
   });
 
-  document.getElementById("removeWalletBtn").addEventListener("click", () => {
-    const wallets = getWallets().filter((w) => w.address !== wallet);
-    if (!wallets.length) return;
-    saveWallets(wallets);
-    wallet = wallets[0].address;
-    renderWalletSelect();
-    navigate(currentPage());
-  });
+  document.querySelectorAll("#tabBar .tab").forEach(a =>
+    a.addEventListener("click", () => navigate(a.dataset.page))
+  );
 
   navigate("market");
+
+  // Register SW
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  }
 });
