@@ -111,6 +111,16 @@ function coinDot() {
   return '<span class="coin-dot"></span>';
 }
 
+function requireWallet() {
+  if (wallet) return true;
+  setContent(`<div class="empty-state" style="padding:60px 20px">
+    <div style="font-size:1.1rem;font-weight:600;color:var(--text);margin-bottom:8px">No wallet added</div>
+    <div style="margin-bottom:16px">Add a wallet address to view this page.</div>
+    <button onclick="openWalletModal()" class="btn-primary" style="display:inline-flex">Add Wallet</button>
+  </div>`);
+  return false;
+}
+
 // --- Wallet ---
 function renderWalletChip() {
   const w = getWallets().find(w => w.address === wallet);
@@ -388,6 +398,7 @@ function renderMarket(rows, filter = "") {
 }
 
 async function showAccount() {
+  if (!requireWallet()) return;
   const cached = getCache("account");
   if (cached) {
     renderAccount(cached);
@@ -517,6 +528,7 @@ function renderAccount({ perps, spot, mids }) {
 }
 
 async function showOrders() {
+  if (!requireWallet()) return;
   const cached = getCache("orders");
   if (cached) {
     renderOrders(cached);
@@ -609,6 +621,7 @@ function renderOrders({ openOrders, fills }, activeTab = "open") {
 }
 
 async function showTrades() {
+  if (!requireWallet()) return;
   const cached = getCache("trades");
   if (cached) {
     renderTrades(cached);
@@ -669,6 +682,7 @@ function renderTrades(fills, activeCoin = "All") {
 }
 
 async function showFunding() {
+  if (!requireWallet()) return;
   const cached = getCache("funding");
   if (cached) {
     renderFunding(cached);
