@@ -554,11 +554,15 @@ async function showOrders() {
   }
 
   try {
-    const [openOrders, fills] = await Promise.all([
+    const [openOrders, fills, perps] = await Promise.all([
       fetchInfo("frontendOpenOrders", { user: wallet }),
       fetchInfo("userFills", { user: wallet }),
+      fetchInfo("clearinghouseState", { user: wallet }),
     ]);
-    const data = { openOrders, fills: fills.slice(0, 30) };
+    const positions = (perps.assetPositions || [])
+      .filter(p => parseFloat(p.position.szi) !== 0)
+      .map(p => p.position);
+    const data = { openOrders, fills: fills.slice(0, 30), positions };
     if (!cached || dataChanged(cached, data)) {
       setCache("orders", data);
       renderOrders(data);
@@ -574,19 +578,20 @@ async function showOrders() {
   }
 }
 
-function renderOrders({ openOrders, fills }, activeTab = "open") {
+function renderOrders({ openOrders, fills, positions = [] }, activeTab = "open") {
   const openContent = openOrders.length ? `
     <div class="table-wrap"><table>
-      <thead><tr><th>Coin</th><th>Side</th><th>Price</th><th>Size</th><th>Type</th></tr></thead>
+      <thead><tr><th>Coin</th><th>Side</th><th>Price</th><th>Size</th><th>Est. PnL</th><th>Type</th></tr></thead>
       <tbody>${openOrders.map(o => {
         // Direction: show Close Long/Short for position TP/SL orders
         let sideLabel, sideClass;
+        const isCloseLong = o.side === 'A';
         if (o.isPositionTpsl) {
-          sideLabel = o.side === 'A' ? 'Close Long' : 'Close Short';
-          sideClass = o.side === 'A' ? 'sell' : 'buy';
+          sideLabel = isCloseLong ? 'Close Long' : 'Close Short';
+          sideClass = isCloseLong ? 'sell' : 'buy';
         } else if (o.reduceOnly) {
-          sideLabel = o.side === 'B' ? 'Close Short' : 'Close Long';
-          sideClass = o.side === 'B' ? 'buy' : 'sell';
+          sideLabel = isCloseLong ? 'Close Long' : 'Close Short';
+          sideClass = isCloseLong ? 'sell' : 'buy';
         } else {
           sideLabel = o.side === 'B' ? 'Long' : 'Short';
           sideClass = o.side === 'B' ? 'buy' : 'sell';
@@ -599,11 +604,25 @@ function renderOrders({ openOrders, fills }, activeTab = "open") {
         const triggerInfo = o.isTrigger && o.triggerPx !== '0' ? o.triggerPx : '';
         // Size: show "--" for position TP/SL with no fixed size
         const rawSize = parseFloat(o.sz) === 0 && parseFloat(o.origSz) === 0 ? '—' : (parseFloat(o.sz) === 0 ? o.origSz : o.sz);
+        // Expected PnL: for trigger/limit close orders, calculate from position entry
+        let estPnl = '';
+        const pos = positions.find(p => p.coin === o.coin);
+        if (pos && (o.isTrigger || o.reduceOnly || o.isPositionTpsl)) {
+          const entryPx = parseFloat(pos.entryPx) || 0;
+          const trigPx = parseFloat(o.triggerPx) || parseFloat(o.limitPx) || 0;
+          const size = Math.abs(parseFloat(pos.szi)) || 0;
+          if (entryPx && trigPx && size) {
+            const isLong = parseFloat(pos.szi) > 0;
+            const pnl = isLong ? (trigPx - entryPx) * size : (entryPx - trigPx) * size;
+            estPnl = `<span class="${pnlClass(pnl)}" style="font-family:var(--font-mono)">$${fmt(pnl)}</span>`;
+          }
+        }
         return `<tr>
         <td><span class="coin-tag">${coinDot()}<strong>${o.coin}</strong></span></td>
         <td><span class="badge ${sideClass}">${sideLabel}</span></td>
         <td style="font-family:var(--font-mono)">${price}${triggerInfo ? `<div style="font-size:0.6rem;color:var(--text-dim)">trigger: ${triggerInfo}</div>` : ''}</td>
         <td style="font-family:var(--font-mono)">${rawSize}</td>
+        <td>${estPnl || '—'}</td>
         <td style="font-size:0.65rem;color:var(--text-secondary)">${o.orderType || 'Limit'}</td>
       </tr>`;
       }).join("")}</tbody>
