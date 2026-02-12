@@ -562,9 +562,45 @@ tbody tr:last-child td { border-bottom: none; }
   border-color: var(--border);
 }
 
+.wallet-search-wrap {
+  position: relative;
+  margin-bottom: 12px;
+}
+
+.wallet-search-wrap svg {
+  position: absolute;
+  left: 12px; top: 50%; transform: translateY(-50%);
+  color: var(--text-dim);
+  pointer-events: none;
+  transition: color 0.2s;
+}
+
+.wallet-search {
+  width: 100%; padding: 10px 12px 10px 34px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text); font-size: 0.8rem;
+  font-family: var(--font-body);
+  outline: none; transition: all 0.2s;
+}
+
+.wallet-search:focus {
+  border-color: var(--border-glow);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.wallet-search:focus + svg,
+.wallet-search-wrap:focus-within svg { color: var(--accent); }
+
+.wallet-search::placeholder { color: var(--text-dim); }
+
 .wallet-list {
   display: flex; flex-direction: column; gap: 6px;
   margin-bottom: 20px;
+  max-height: 45vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .wallet-item {
@@ -589,10 +625,68 @@ tbody tr:last-child td { border-bottom: none; }
 
 .wallet-item.active .wallet-item-info { color: var(--text); }
 
+.wallet-item-left { flex: 1; min-width: 0; }
+
 .wallet-item-label {
   font-size: 0.72rem; font-weight: 500;
   color: var(--text-secondary);
   margin-bottom: 2px;
+}
+
+.wallet-item-balance {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 6px;
+}
+
+.wallet-bal-total {
+  font-family: var(--font-mono);
+  font-size: 0.9rem; font-weight: 600;
+  color: var(--text);
+}
+
+.wallet-bal-pnl {
+  font-family: var(--font-mono);
+  font-size: 0.68rem; font-weight: 500;
+}
+
+.wallet-bal-loading {
+  font-size: 0.65rem; color: var(--text-dim);
+  font-style: italic;
+}
+
+.wallet-item-breakdown {
+  display: flex; gap: 10px; margin-top: 2px;
+  font-size: 0.6rem; font-family: var(--font-mono);
+  color: var(--text-dim);
+}
+
+/* Total balance display on Account page */
+.total-balance-display {
+  display: flex; align-items: baseline; gap: 14px;
+  margin-bottom: 6px;
+}
+
+.total-balance-value {
+  font-family: var(--font-mono);
+  font-size: 2rem; font-weight: 700;
+  color: var(--text-bright);
+  letter-spacing: -0.03em;
+}
+
+.total-balance-pnl {
+  font-family: var(--font-mono);
+  font-size: 0.82rem; font-weight: 500;
+}
+
+.total-balance-breakdown {
+  display: flex; gap: 16px;
+  font-size: 0.72rem; font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+@media (max-width: 479px) {
+  .total-balance-value { font-size: 1.6rem; }
+  .total-balance-display { gap: 10px; flex-wrap: wrap; }
 }
 
 .wallet-item.active .wallet-item-label { color: var(--accent); }

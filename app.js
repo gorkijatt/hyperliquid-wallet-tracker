@@ -124,14 +124,92 @@ function renderWalletChip() {
   }
 }
 
-function renderWalletModal() {
-  const wallets = getWallets();
+// Balance cache per wallet address
+function getBalanceCache(addr) {
+  try {
+    const raw = localStorage.getItem(`hl_bal_${addr.slice(0,10)}`);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch { return null; }
+}
+
+function setBalanceCache(addr, bal) {
+  try {
+    localStorage.setItem(`hl_bal_${addr.slice(0,10)}`, JSON.stringify(bal));
+  } catch {}
+}
+
+async function fetchWalletBalance(addr) {
+  try {
+    const [perps, spot] = await Promise.all([
+      fetchInfo("clearinghouseState", { user: addr }),
+      fetchInfo("spotClearinghouseState", { user: addr }),
+    ]);
+    const mb = perps.marginSummary || {};
+    const perpsValue = parseFloat(mb.accountValue) || 0;
+    const positions = (perps.assetPositions || []).filter(p => parseFloat(p.position.szi) !== 0);
+    const uPnl = positions.reduce((s, p) => s + parseFloat(p.position.unrealizedPnl || 0), 0);
+
+    // Sum spot balances (total value in USD — spot tokens don't have a direct USD value from this endpoint,
+    // so we count the USDC/USDT balances directly and note non-stablecoin tokens separately)
+    const spotBalances = (spot.balances || []).filter(b => parseFloat(b.total) > 0);
+    // For a proper total, we'd need mid prices for each spot token.
+    // Fetch mids to convert spot holdings to USD
+    let spotUsdValue = 0;
+    if (spotBalances.length) {
+      try {
+        const mids = await fetchInfo("allMids");
+        for (const b of spotBalances) {
+          const total = parseFloat(b.total) || 0;
+          if (b.coin === "USDC" || b.coin === "USDT") {
+            spotUsdValue += total;
+          } else {
+            const mid = parseFloat(mids[b.coin]) || 0;
+            spotUsdValue += total * mid;
+          }
+        }
+      } catch {
+        // If mids fail, just count stablecoins
+        for (const b of spotBalances) {
+          if (b.coin === "USDC" || b.coin === "USDT") {
+            spotUsdValue += parseFloat(b.total) || 0;
+          }
+        }
+      }
+    }
+
+    const total = perpsValue + spotUsdValue;
+    const bal = { perpsValue, spotValue: spotUsdValue, unrealizedPnl: uPnl, total, ts: Date.now() };
+    setBalanceCache(addr, bal);
+    return bal;
+  } catch { return null; }
+}
+
+function renderWalletModal(filter = "") {
+  const allWallets = getWallets();
+  const f = filter.toLowerCase();
+  const wallets = f
+    ? allWallets.filter(w => (w.label || "").toLowerCase().includes(f) || w.address.toLowerCase().includes(f))
+    : allWallets;
   const list = document.getElementById("walletList");
-  list.innerHTML = wallets.map(w => `
+  list.innerHTML = wallets.map(w => {
+    const cached = getBalanceCache(w.address);
+    const balHtml = cached
+      ? `<div class="wallet-item-balance">
+          <span class="wallet-bal-total">$${fmt(cached.total)}</span>
+          <span class="wallet-bal-pnl ${pnlClass(cached.unrealizedPnl)}">uPnL $${fmt(cached.unrealizedPnl)}</span>
+        </div>
+        <div class="wallet-item-breakdown">
+          <span>Perps $${fmt(cached.perpsValue)}</span>
+          <span>Spot $${fmt(cached.spotValue)}</span>
+        </div>`
+      : `<div class="wallet-item-balance"><span class="wallet-bal-loading">loading...</span></div>`;
+    return `
     <div class="wallet-item ${w.address === wallet ? "active" : ""}" data-addr="${w.address}">
-      <div>
+      <div class="wallet-item-left">
         <div class="wallet-item-label">${w.label || "Wallet"}</div>
         <div class="wallet-item-info">${w.address.slice(0, 10)}…${w.address.slice(-6)}</div>
+        ${balHtml}
       </div>
       <div class="wallet-item-actions">
         <button class="wallet-item-edit" data-edit="${w.address}" title="Rename">
@@ -139,8 +217,8 @@ function renderWalletModal() {
         </button>
         ${wallets.length > 1 ? `<button class="wallet-item-remove" data-remove="${w.address}">&times;</button>` : ""}
       </div>
-    </div>
-  `).join("");
+    </div>`;
+  }).join("");
 
   list.querySelectorAll(".wallet-item").forEach(el => {
     el.addEventListener("click", (e) => {
@@ -188,7 +266,24 @@ function renderWalletModal() {
 
 function openWalletModal() {
   document.getElementById("walletModal").classList.remove("hidden");
+  const searchInput = document.getElementById("walletSearch");
+  searchInput.value = "";
   renderWalletModal();
+
+  // Wire up search
+  searchInput.addEventListener("input", () => {
+    renderWalletModal(searchInput.value);
+  });
+
+  // Fetch fresh balances for all wallets
+  const wallets = getWallets();
+  wallets.forEach(w => {
+    fetchWalletBalance(w.address).then(() => {
+      if (!document.getElementById("walletModal").classList.contains("hidden")) {
+        renderWalletModal(searchInput.value);
+      }
+    });
+  });
 }
 
 function closeWalletModal() {
@@ -292,11 +387,12 @@ async function showAccount() {
   }
 
   try {
-    const [perps, spot] = await Promise.all([
+    const [perps, spot, mids] = await Promise.all([
       fetchInfo("clearinghouseState", { user: wallet }),
       fetchInfo("spotClearinghouseState", { user: wallet }),
+      fetchInfo("allMids"),
     ]);
-    const data = { perps, spot };
+    const data = { perps, spot, mids };
     if (!cached || dataChanged(cached, data)) {
       setCache("account", data);
       renderAccount(data);
@@ -312,15 +408,40 @@ async function showAccount() {
   }
 }
 
-function renderAccount({ perps, spot }) {
+function renderAccount({ perps, spot, mids }) {
   const mb = perps.marginSummary || {};
+  const perpsValue = parseFloat(mb.accountValue) || 0;
   const spotBalances = (spot.balances || []).filter(b => parseFloat(b.total) > 0);
   const positions = (perps.assetPositions || []).filter(p => parseFloat(p.position.szi) !== 0);
   const totalPnl = positions.reduce((s, p) => s + parseFloat(p.position.unrealizedPnl || 0), 0);
 
+  // Calculate spot USD value
+  let spotUsdValue = 0;
+  for (const b of spotBalances) {
+    const total = parseFloat(b.total) || 0;
+    if (b.coin === "USDC" || b.coin === "USDT") {
+      spotUsdValue += total;
+    } else if (mids && mids[b.coin]) {
+      spotUsdValue += total * (parseFloat(mids[b.coin]) || 0);
+    }
+  }
+  const totalBalance = perpsValue + spotUsdValue;
+
   setContent(`
     <div class="card">
-      <div class="card-title">Account Overview</div>
+      <div class="card-title">Total Balance</div>
+      <div class="total-balance-display">
+        <span class="total-balance-value">$${fmt(totalBalance)}</span>
+        <span class="total-balance-pnl ${pnlClass(totalPnl)}">uPnL $${fmt(totalPnl)}</span>
+      </div>
+      <div class="total-balance-breakdown">
+        <span>Perps $${fmt(perpsValue)}</span>
+        <span>Spot $${fmt(spotUsdValue)}</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Perps Account</div>
       <div class="stat-row">
         <div class="stat-chip">
           <div class="label">Account Value</div>
@@ -363,15 +484,22 @@ function renderAccount({ perps, spot }) {
 
     ${spotBalances.length ? `
     <div class="card">
-      <div class="card-title">Spot Balances</div>
+      <div class="card-title">Spot Balances ($${fmt(spotUsdValue)})</div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Coin</th><th>Total</th><th>In Use</th></tr></thead>
-          <tbody>${spotBalances.map(b => `<tr>
+          <thead><tr><th>Coin</th><th>Total</th><th>USD Value</th><th>In Use</th></tr></thead>
+          <tbody>${spotBalances.map(b => {
+            const total = parseFloat(b.total) || 0;
+            let usdVal = 0;
+            if (b.coin === "USDC" || b.coin === "USDT") usdVal = total;
+            else if (mids && mids[b.coin]) usdVal = total * (parseFloat(mids[b.coin]) || 0);
+            return `<tr>
             <td><span class="coin-tag">${coinDot()}<strong>${b.coin}</strong></span></td>
             <td style="font-family:var(--font-mono)">${b.total}</td>
+            <td style="font-family:var(--font-mono)">$${fmt(usdVal)}</td>
             <td style="font-family:var(--font-mono)">${b.hold}</td>
-          </tr>`).join("")}</tbody>
+          </tr>`;
+          }).join("")}</tbody>
         </table>
       </div>
     </div>` : ""}
