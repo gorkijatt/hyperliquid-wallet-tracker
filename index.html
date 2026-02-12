@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hyperliquid Explorer</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav>
+    <div class="logo">Hyperliquid</div>
+    <a data-page="market" class="active">Market</a>
+    <a data-page="account">Account</a>
+    <a data-page="orders">Orders</a>
+    <a data-page="trades">Trades</a>
+    <a data-page="funding">Funding</a>
+  </nav>
+  <main>
+    <div class="wallet-bar">
+      <select id="walletSelect"><option value="">-- Select wallet --</option></select>
+      <input id="walletInput" placeholder="Add wallet address (0x...)">
+      <input id="walletLabel" placeholder="Label (optional)">
+      <button id="addWalletBtn">Add</button>
+      <button id="removeWalletBtn">Remove</button>
+    </div>
+    <div id="content"></div>
+  </main>
+  <script src="api.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
