@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hyperliquid Report</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0e1117; color: #c9d1d9; padding: 20px; }
+    h1 { font-size: 1.4rem; margin-bottom: 6px; color: #e6edf3; }
+    .subtitle { font-size: 0.85rem; color: #7d8590; margin-bottom: 24px; }
+    h2 { font-size: 1.1rem; margin: 28px 0 10px; color: #e6edf3; }
+    .back-link { color: #58a6ff; text-decoration: none; font-size: 0.85rem; }
+    .back-link:hover { text-decoration: underline; }
+    #status { color: #7d8590; font-size: 0.85rem; margin-bottom: 16px; }
+    .empty { color: #7d8590; font-style: italic; font-size: 0.9rem; }
+    .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin-bottom: 24px; border: 1px solid #21262d; border-radius: 6px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    th { text-align: left; padding: 8px 10px; background: #161b22; color: #7d8590; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.5px; border-bottom: 1px solid #30363d; }
+    td { padding: 7px 10px; border-bottom: 1px solid #21262d; white-space: nowrap; }
+    tr:hover td { background: #161b22; }
+    .pos { color: #3fb950; }
+    .neg { color: #f85149; }
+    .wallet-label { color: #58a6ff; }
+    .long { color: #3fb950; font-weight: 600; }
+    .short { color: #f85149; font-weight: 600; }
+    .summary { display: flex; gap: 24px; margin-bottom: 20px; flex-wrap: wrap; }
+    .summary-card { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 12px 18px; }
+    .summary-card .label { font-size: 0.75rem; color: #7d8590; text-transform: uppercase; letter-spacing: 0.5px; }
+    .summary-card .value { font-size: 1.2rem; font-weight: 600; color: #e6edf3; margin-top: 2px; }
+  </style>
+</head>
+<body>
+  <a href="index.html" class="back-link">&larr; Back to Explorer</a>
+  <h1>Hyperliquid Report</h1>
+  <p class="subtitle">All wallets — positions &amp; open orders</p>
+  <div id="status">Loading...</div>
+  <div id="summary" class="summary"></div>
+  <div id="positions-section"></div>
+  <div id="orders-section"></div>
+
+  <script>
+    const API_URL = "https://api.hyperliquid.xyz/info";
+
+    async function fetchInfo(type, params = {}) {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type, ...params }),
+      });
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
+      return res.json();
+    }
+
+    function fmt(n, decimals = 2) {
+      const num = parseFloat(n);
+      if (isNaN(num)) return "—";
+      return num.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    }
+
+    function pnlClass(n) {
+      const v = parseFloat(n);
+      if (v > 0) return "pos";
+      if (v < 0) return "neg";
+      return "";
+    }
+
+    function shortAddr(addr) {
+      return addr.slice(0, 6) + "..." + addr.slice(-4);
+    }
+
+    async function loadReport() {
+      const statusEl = document.getElementById("status");
+      const raw = localStorage.getItem("hl_wallets");
+      const wallets = raw ? JSON.parse(raw) : [];
+
+      if (!wallets.length) {
+        statusEl.textContent = "No wallets found. Add wallets in the main app first.";
+        return;
+      }
+
+      statusEl.textContent = `Fetching data for ${wallets.length} wallet(s)...`;
+
+      try {
+        // Fetch allMids once
+        const allMids = await fetchInfo("allMids");
+
+        // Fetch per-wallet data in parallel
+        const results = await Promise.all(wallets.map(async (w) => {
+          const [clearing, orders] = await Promise.all([
+            fetchInfo("clearinghouseState", { user: w.address }),
+            fetchInfo("frontendOpenOrders", { user: w.address }),
+          ]);
+          return { wallet: w, clearing, orders };
+        }));
+
+        // Collect positions and orders
+        const allPositions = [];
+        const allOrders = [];
+        let totalUpnl = 0;
+
+        for (const { wallet: w, clearing, orders } of results) {
+          const label = w.label || shortAddr(w.address);
+          if (clearing.assetPositions) {
+            for (const ap of clearing.assetPositions) {
+              const pos = ap.position;
+              if (parseFloat(pos.szi) === 0) continue;
+              const size = parseFloat(pos.szi);
+              const entry = parseFloat(pos.entryPx);
+              const coin = pos.coin;
+              const markPrice = allMids[coin] ? parseFloat(allMids[coin]) : null;
+              const liq = pos.liquidationPx ? parseFloat(pos.liquidationPx) : null;
+              const upnl = parseFloat(pos.unrealizedPnl);
+              const funding = parseFloat(pos.cumFunding?.sinceOpen ?? 0);
+              const leverage = pos.leverage?.value ? parseFloat(pos.leverage.value) : null;
+              totalUpnl += upnl;
+              allPositions.push({ label, coin, size, entry, markPrice, liq, upnl, funding, leverage });
+            }
+          }
+          if (orders) {
+            for (const o of orders) {
+              allOrders.push({
+                label,
+                coin: o.coin,
+                side: o.side,
+                price: parseFloat(o.limitPx),
+                size: parseFloat(o.sz),
+                type: o.orderType,
+              });
+            }
+          }
+        }
+
+        // Summary
+        const summaryEl = document.getElementById("summary");
+        summaryEl.innerHTML = `
+          <div class="summary-card">
+            <div class="label">Wallets</div>
+            <div class="value">${wallets.length}</div>
+          </div>
+          <div class="summary-card">
+            <div class="label">Open Positions</div>
+            <div class="value">${allPositions.length}</div>
+          </div>
+          <div class="summary-card">
+            <div class="label">Open Orders</div>
+            <div class="value">${allOrders.length}</div>
+          </div>
+          <div class="summary-card">
+            <div class="label">Total uPnL</div>
+            <div class="value ${pnlClass(totalUpnl)}">${totalUpnl >= 0 ? "+" : ""}${fmt(totalUpnl)}</div>
+          </div>
+        `;
+
+        // Positions table
+        const posSection = document.getElementById("positions-section");
+        if (allPositions.length === 0) {
+          posSection.innerHTML = `<h2>Open Positions</h2><p class="empty">No open positions.</p>`;
+        } else {
+          let rows = allPositions.map(p => `<tr>
+            <td class="wallet-label">${esc(p.label)}</td>
+            <td>${esc(p.coin)}</td>
+            <td class="${p.size > 0 ? 'long' : 'short'}">${p.size > 0 ? "LONG" : "SHORT"} ${fmt(Math.abs(p.size), 4)}</td>
+            <td>${fmt(p.entry, 4)}</td>
+            <td>${p.markPrice !== null ? fmt(p.markPrice, 4) : "—"}</td>
+            <td>${p.liq !== null ? fmt(p.liq, 2) : "—"}</td>
+            <td class="${pnlClass(p.upnl)}">${p.upnl >= 0 ? "+" : ""}${fmt(p.upnl)}</td>
+            <td class="${pnlClass(-p.funding)}">${fmt(p.funding)}</td>
+            <td>${p.leverage !== null ? p.leverage + "x" : "—"}</td>
+          </tr>`).join("");
+          posSection.innerHTML = `<h2>Open Positions</h2>
+            <div class="table-wrap"><table>
+              <thead><tr><th>Wallet</th><th>Coin</th><th>Size</th><th>Entry</th><th>Mark</th><th>Liq</th><th>uPnL</th><th>Funding</th><th>Lev</th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table></div>`;
+        }
+
+        // Orders table
+        const ordSection = document.getElementById("orders-section");
+        if (allOrders.length === 0) {
+          ordSection.innerHTML = `<h2>Open Orders</h2><p class="empty">No open orders.</p>`;
+        } else {
+          let rows = allOrders.map(o => `<tr>
+            <td class="wallet-label">${esc(o.label)}</td>
+            <td>${esc(o.coin)}</td>
+            <td class="${o.side === 'B' ? 'long' : 'short'}">${o.side === "B" ? "BUY" : "SELL"}</td>
+            <td>${fmt(o.price, 4)}</td>
+            <td>${fmt(o.size, 4)}</td>
+            <td>${esc(o.type)}</td>
+          </tr>`).join("");
+          ordSection.innerHTML = `<h2>Open Orders</h2>
+            <div class="table-wrap"><table>
+              <thead><tr><th>Wallet</th><th>Coin</th><th>Side</th><th>Price</th><th>Size</th><th>Type</th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table></div>`;
+        }
+
+        const now = new Date().toLocaleTimeString();
+        statusEl.textContent = `Updated at ${now}`;
+      } catch (err) {
+        statusEl.textContent = `Error: ${err.message}`;
+        console.error(err);
+      }
+    }
+
+    function esc(str) {
+      const d = document.createElement("div");
+      d.textContent = str;
+      return d.innerHTML;
+    }
+
+    loadReport();
+  </script>
+</body>
+</html>

@@ -149,6 +149,18 @@ header#topBar {
   display: flex; align-items: center; gap: 12px;
 }
 
+.report-link {
+  color: var(--text-secondary);
+  display: flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  transition: color 0.2s, background 0.2s;
+}
+.report-link:hover {
+  color: var(--text-primary);
+  background: var(--card-bg);
+}
+
 /* Live indicator */
 .live-indicator {
   display: flex; align-items: center; gap: 6px;
