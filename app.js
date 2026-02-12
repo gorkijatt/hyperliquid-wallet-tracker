@@ -228,6 +228,9 @@ function renderWalletModal(filter = "") {
         ${balHtml}
       </div>
       <div class="wallet-item-actions">
+        <button class="wallet-item-copy" data-copy="${w.address}" title="Copy address">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
         <button class="wallet-item-edit" data-edit="${w.address}" title="Rename">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M17 3a2.85 2.85 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
         </button>
@@ -238,7 +241,7 @@ function renderWalletModal(filter = "") {
 
   list.querySelectorAll(".wallet-item").forEach(el => {
     el.addEventListener("click", (e) => {
-      if (e.target.closest(".wallet-item-remove") || e.target.closest(".wallet-item-edit")) return;
+      if (e.target.closest(".wallet-item-remove") || e.target.closest(".wallet-item-edit") || e.target.closest(".wallet-item-copy")) return;
       clearWalletCache(el.dataset.addr);
       wallet = el.dataset.addr;
       localStorage.setItem("hl_active_wallet", wallet);
@@ -263,6 +266,17 @@ function renderWalletModal(filter = "") {
       renderWalletChip();
       renderWalletModal();
       showToast("Wallet removed");
+    });
+  });
+
+  list.querySelectorAll(".wallet-item-copy").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      navigator.clipboard.writeText(btn.dataset.copy).then(() => {
+        showToast("Address copied", "success");
+      }).catch(() => {
+        showToast("Failed to copy", "error");
+      });
     });
   });
 

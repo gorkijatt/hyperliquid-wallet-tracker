@@ -693,6 +693,7 @@ tbody tr:last-child td { border-bottom: none; }
   display: flex; align-items: center; gap: 4px;
 }
 
+.wallet-item-copy,
 .wallet-item-edit,
 .wallet-item-remove {
   background: none; border: none;
@@ -704,6 +705,7 @@ tbody tr:last-child td { border-bottom: none; }
   transition: all 0.15s;
 }
 
+.wallet-item-copy:hover,
 .wallet-item-edit:hover {
   color: var(--accent); background: var(--accent-dim);
 }
