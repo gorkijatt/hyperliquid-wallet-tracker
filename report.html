@@ -22,18 +22,47 @@
     .pos { color: #3fb950; }
     .neg { color: #f85149; }
     .wallet-label { color: #58a6ff; }
+    .clickable { cursor: pointer; }
+    .clickable:hover { text-decoration: underline; }
     .long { color: #3fb950; font-weight: 600; }
     .short { color: #f85149; font-weight: 600; }
     .summary { display: flex; gap: 24px; margin-bottom: 20px; flex-wrap: wrap; }
     .summary-card { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 12px 18px; }
     .summary-card .label { font-size: 0.75rem; color: #7d8590; text-transform: uppercase; letter-spacing: 0.5px; }
     .summary-card .value { font-size: 1.2rem; font-weight: 600; color: #e6edf3; margin-top: 2px; }
+    .section-header { display: flex; align-items: center; gap: 12px; margin: 28px 0 10px; }
+    .section-header h2 { margin: 0; }
+    .view-toggle { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 12px; padding: 3px 12px; font-size: 0.75rem; cursor: pointer; font-family: inherit; }
+    .view-toggle:hover { background: #30363d; }
+    .pos-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-bottom: 24px; }
+    .pos-card { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 12px 16px; }
+    .pos-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .pos-card-coin { font-weight: 700; font-size: 1rem; color: #e6edf3; }
+    .pos-card-side { font-size: 0.75rem; font-weight: 600; padding: 2px 8px; border-radius: 8px; }
+    .pos-card-side.long { background: rgba(63,185,80,0.15); color: #3fb950; }
+    .pos-card-side.short { background: rgba(248,81,73,0.15); color: #f85149; }
+    .pos-card-row { display: flex; justify-content: space-between; padding: 3px 0; font-size: 0.85rem; }
+    .pos-card-label { color: #7d8590; }
+    .pos-card-value { color: #e6edf3; }
+    .pos-card-value.pos { color: #3fb950; }
+    .pos-card-value.neg { color: #f85149; }
+    .pos-card-wallet { color: #58a6ff; font-size: 0.95rem; font-weight: 600; margin-bottom: 8px; cursor: pointer; }
+    .pos-card-wallet:hover { text-decoration: underline; }
+    .top-bar { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+    .top-bar-left { flex: 1; }
+    .btc-price { font-size: 1.2rem; color: #f7931a; white-space: nowrap; padding-top: 4px; }
+    .btc-price .price { color: #e6edf3; font-weight: 600; font-size: 1.1rem; margin-left: 6px; }
   </style>
 </head>
 <body>
-  <a href="index.html" class="back-link">&larr; Back to Explorer</a>
-  <h1>Hyperliquid Report</h1>
-  <p class="subtitle">All wallets — positions &amp; open orders</p>
+  <div class="top-bar">
+    <div class="top-bar-left">
+      <a href="index.html" class="back-link">&larr; Back to Explorer</a>
+      <h1>Hyperliquid Report</h1>
+      <p class="subtitle">All wallets — positions &amp; open orders</p>
+    </div>
+    <div id="btc-price" class="btc-price"></div>
+  </div>
   <div id="status">Loading...</div>
   <div id="summary" class="summary"></div>
   <div id="positions-section"></div>
@@ -85,6 +114,11 @@
         // Fetch allMids once
         const allMids = await fetchInfo("allMids");
 
+        // Show BTC price
+        if (allMids["BTC"]) {
+          document.getElementById("btc-price").innerHTML = `&#8383;<span class="price">$${fmt(parseFloat(allMids["BTC"]))}</span>`;
+        }
+
         // Fetch per-wallet data in parallel
         const results = await Promise.all(wallets.map(async (w) => {
           const [clearing, orders] = await Promise.all([
@@ -114,13 +148,14 @@
               const funding = parseFloat(pos.cumFunding?.sinceOpen ?? 0);
               const leverage = pos.leverage?.value ? parseFloat(pos.leverage.value) : null;
               totalUpnl += upnl;
-              allPositions.push({ label, coin, size, entry, markPrice, liq, upnl, funding, leverage });
+              allPositions.push({ label, address: w.address, coin, size, entry, markPrice, liq, upnl, funding, leverage });
             }
           }
           if (orders) {
             for (const o of orders) {
               allOrders.push({
                 label,
+                address: w.address,
                 coin: o.coin,
                 side: o.side,
                 price: parseFloat(o.limitPx),
@@ -152,13 +187,13 @@
           </div>
         `;
 
-        // Positions table
+        // Positions table + cards
         const posSection = document.getElementById("positions-section");
         if (allPositions.length === 0) {
-          posSection.innerHTML = `<h2>Open Positions</h2><p class="empty">No open positions.</p>`;
+          posSection.innerHTML = `<div class="section-header"><h2>Open Positions</h2></div><p class="empty">No open positions.</p>`;
         } else {
           let rows = allPositions.map(p => `<tr>
-            <td class="wallet-label">${esc(p.label)}</td>
+            <td class="wallet-label clickable" onclick="copyAddr('${p.address}')" title="Click to copy address">${esc(p.label)}</td>
             <td>${esc(p.coin)}</td>
             <td class="${p.size > 0 ? 'long' : 'short'}">${p.size > 0 ? "LONG" : "SHORT"}</td>
             <td>${fmt(Math.abs(p.size), 4)}</td>
@@ -169,11 +204,29 @@
             <td class="${pnlClass(-p.funding)}">${fmt(p.funding)}</td>
             <td>${p.leverage !== null ? p.leverage + "x" : "—"}</td>
           </tr>`).join("");
-          posSection.innerHTML = `<h2>Open Positions</h2>
-            <div class="table-wrap"><table>
+          let cards = allPositions.map(p => {
+            const side = p.size > 0 ? "LONG" : "SHORT";
+            const sideCls = p.size > 0 ? "long" : "short";
+            return `<div class="pos-card">
+              <div class="pos-card-wallet" onclick="copyAddr('${p.address}')" title="Click to copy address">${esc(p.label)}</div>
+              <div class="pos-card-header">
+                <span class="pos-card-coin">${esc(p.coin)}</span>
+                <span class="pos-card-side ${sideCls}">${side}</span>
+              </div>
+              <div class="pos-card-row"><span class="pos-card-label">Size</span><span class="pos-card-value">${fmt(Math.abs(p.size), 4)}</span></div>
+              <div class="pos-card-row"><span class="pos-card-label">uPnL</span><span class="pos-card-value ${pnlClass(p.upnl)}">${p.upnl >= 0 ? "+" : ""}${fmt(p.upnl)}</span></div>
+              <div class="pos-card-row"><span class="pos-card-label">Entry</span><span class="pos-card-value">${fmt(p.entry, 4)}</span></div>
+              <div class="pos-card-row"><span class="pos-card-label">Liq</span><span class="pos-card-value">${p.liq !== null ? fmt(p.liq, 2) : "—"}</span></div>
+            </div>`;
+          }).join("");
+          const savedView = localStorage.getItem("hl_pos_view") || "table";
+          const showCards = savedView === "cards";
+          posSection.innerHTML = `<div class="section-header"><h2>Open Positions</h2><button class="view-toggle" onclick="togglePosView()">${showCards ? "Table" : "Cards"}</button></div>
+            <div id="pos-table" class="table-wrap" style="${showCards ? "display:none" : ""}"><table>
               <thead><tr><th>Wallet</th><th>Coin</th><th>Side</th><th>Size</th><th>Entry</th><th>Mark</th><th>Liq</th><th>uPnL</th><th>Funding</th><th>Lev</th></tr></thead>
               <tbody>${rows}</tbody>
-            </table></div>`;
+            </table></div>
+            <div id="pos-cards" class="pos-cards" style="${showCards ? "" : "display:none"}">${cards}</div>`;
         }
 
         // Orders table
@@ -182,7 +235,7 @@
           ordSection.innerHTML = `<h2>Open Orders</h2><p class="empty">No open orders.</p>`;
         } else {
           let rows = allOrders.map(o => `<tr>
-            <td class="wallet-label">${esc(o.label)}</td>
+            <td class="wallet-label clickable" onclick="copyAddr('${o.address}')" title="Click to copy address">${esc(o.label)}</td>
             <td>${esc(o.coin)}</td>
             <td class="${o.side === 'B' ? 'long' : 'short'}">${o.side === "B" ? "BUY" : "SELL"}</td>
             <td>${fmt(o.price, 4)}</td>
@@ -208,6 +261,27 @@
       const d = document.createElement("div");
       d.textContent = str;
       return d.innerHTML;
+    }
+
+    function copyAddr(addr) {
+      navigator.clipboard.writeText(addr).then(() => {
+        const msg = document.createElement("div");
+        msg.textContent = "Copied: " + addr;
+        msg.style.cssText = "position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#161b22;border:1px solid #30363d;color:#e6edf3;padding:8px 16px;border-radius:6px;font-size:0.85rem;z-index:99";
+        document.body.appendChild(msg);
+        setTimeout(() => msg.remove(), 2000);
+      });
+    }
+
+    function togglePosView() {
+      const table = document.getElementById("pos-table");
+      const cards = document.getElementById("pos-cards");
+      const btn = document.querySelector(".view-toggle");
+      const showCards = cards.style.display === "none";
+      cards.style.display = showCards ? "" : "none";
+      table.style.display = showCards ? "none" : "";
+      btn.textContent = showCards ? "Table" : "Cards";
+      localStorage.setItem("hl_pos_view", showCards ? "cards" : "table");
     }
 
     loadReport();
