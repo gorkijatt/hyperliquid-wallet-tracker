@@ -137,6 +137,18 @@ function setBalanceCache(addr, bal) {
   } catch {}
 }
 
+function getSpotMidPrice(mids, coin, token) {
+  if (coin === "USDC" || coin === "USDT") return 1;
+  const byName = parseFloat(mids[coin]);
+  if (byName) return byName;
+  // Spot-only tokens use @{tokenIndex} as key in allMids
+  if (token !== undefined) {
+    const byToken = parseFloat(mids[`@${token}`]);
+    if (byToken) return byToken;
+  }
+  return 0;
+}
+
 async function fetchWalletBalance(addr) {
   try {
     const [perps, spot] = await Promise.all([
@@ -159,15 +171,10 @@ async function fetchWalletBalance(addr) {
         const mids = await fetchInfo("allMids");
         for (const b of spotBalances) {
           const total = parseFloat(b.total) || 0;
-          if (b.coin === "USDC" || b.coin === "USDT") {
-            spotUsdValue += total;
-          } else {
-            const mid = parseFloat(mids[b.coin]) || 0;
-            spotUsdValue += total * mid;
-          }
+          const price = getSpotMidPrice(mids, b.coin, b.token);
+          spotUsdValue += total * price;
         }
       } catch {
-        // If mids fail, just count stablecoins
         for (const b of spotBalances) {
           if (b.coin === "USDC" || b.coin === "USDT") {
             spotUsdValue += parseFloat(b.total) || 0;
@@ -176,7 +183,8 @@ async function fetchWalletBalance(addr) {
       }
     }
 
-    const total = perpsValue + spotUsdValue;
+    // Spot total includes perps margin, so total = spot + unrealized PnL only
+    const total = spotUsdValue + uPnl;
     const bal = { perpsValue, spotValue: spotUsdValue, unrealizedPnl: uPnl, total, ts: Date.now() };
     setBalanceCache(addr, bal);
     return bal;
@@ -421,13 +429,12 @@ function renderAccount({ perps, spot, mids }) {
   let spotUsdValue = 0;
   for (const b of spotBalances) {
     const total = parseFloat(b.total) || 0;
-    if (b.coin === "USDC" || b.coin === "USDT") {
-      spotUsdValue += total;
-    } else if (mids && mids[b.coin]) {
-      spotUsdValue += total * (parseFloat(mids[b.coin]) || 0);
-    }
+    const price = mids ? getSpotMidPrice(mids, b.coin, b.token) : (b.coin === "USDC" || b.coin === "USDT" ? 1 : 0);
+    spotUsdValue += total * price;
   }
-  const totalBalance = perpsValue + spotUsdValue;
+  // Spot total already includes perps margin (shown as "hold" in spot USDC).
+  // To avoid double-counting, total = spot value + perps unrealized PnL only.
+  const totalBalance = spotUsdValue + totalPnl;
 
   setContent(`
     <div class="card">
@@ -492,9 +499,8 @@ function renderAccount({ perps, spot, mids }) {
           <thead><tr><th>Coin</th><th>Total</th><th>USD Value</th><th>In Use</th></tr></thead>
           <tbody>${spotBalances.map(b => {
             const total = parseFloat(b.total) || 0;
-            let usdVal = 0;
-            if (b.coin === "USDC" || b.coin === "USDT") usdVal = total;
-            else if (mids && mids[b.coin]) usdVal = total * (parseFloat(mids[b.coin]) || 0);
+            const price = mids ? getSpotMidPrice(mids, b.coin, b.token) : (b.coin === "USDC" || b.coin === "USDT" ? 1 : 0);
+            const usdVal = total * price;
             return `<tr>
             <td><span class="coin-tag">${coinDot()}<strong>${b.coin}</strong></span></td>
             <td style="font-family:var(--font-mono)">${b.total}</td>
@@ -521,7 +527,7 @@ async function showOrders() {
 
   try {
     const [openOrders, fills] = await Promise.all([
-      fetchInfo("openOrders", { user: wallet }),
+      fetchInfo("frontendOpenOrders", { user: wallet }),
       fetchInfo("userFills", { user: wallet }),
     ]);
     const data = { openOrders, fills: fills.slice(0, 30) };
@@ -543,14 +549,36 @@ async function showOrders() {
 function renderOrders({ openOrders, fills }, activeTab = "open") {
   const openContent = openOrders.length ? `
     <div class="table-wrap"><table>
-      <thead><tr><th>Coin</th><th>Side</th><th>Price</th><th>Size</th><th>OID</th></tr></thead>
-      <tbody>${openOrders.map(o => `<tr>
+      <thead><tr><th>Coin</th><th>Side</th><th>Price</th><th>Size</th><th>Type</th></tr></thead>
+      <tbody>${openOrders.map(o => {
+        // Direction: show Close Long/Short for position TP/SL orders
+        let sideLabel, sideClass;
+        if (o.isPositionTpsl) {
+          sideLabel = o.side === 'A' ? 'Close Long' : 'Close Short';
+          sideClass = o.side === 'A' ? 'sell' : 'buy';
+        } else if (o.reduceOnly) {
+          sideLabel = o.side === 'B' ? 'Close Short' : 'Close Long';
+          sideClass = o.side === 'B' ? 'buy' : 'sell';
+        } else {
+          sideLabel = o.side === 'B' ? 'Long' : 'Short';
+          sideClass = o.side === 'B' ? 'buy' : 'sell';
+        }
+        // Price: show trigger price for trigger orders, "Market" for market types
+        const isMarketType = (o.orderType || '').includes('Market');
+        const price = o.isTrigger
+          ? (isMarketType ? 'Market' : o.limitPx)
+          : o.limitPx;
+        const triggerInfo = o.isTrigger && o.triggerPx !== '0' ? o.triggerPx : '';
+        // Size: show "--" for position TP/SL with no fixed size
+        const rawSize = parseFloat(o.sz) === 0 && parseFloat(o.origSz) === 0 ? '—' : (parseFloat(o.sz) === 0 ? o.origSz : o.sz);
+        return `<tr>
         <td><span class="coin-tag">${coinDot()}<strong>${o.coin}</strong></span></td>
-        <td><span class="badge ${o.side === 'B' ? 'buy' : 'sell'}">${o.side === 'B' ? 'Buy' : 'Sell'}</span></td>
-        <td style="font-family:var(--font-mono)">${o.limitPx}</td>
-        <td style="font-family:var(--font-mono)">${o.sz}</td>
-        <td style="font-size:0.65rem;color:var(--text-dim);font-family:var(--font-mono)">${o.oid}</td>
-      </tr>`).join("")}</tbody>
+        <td><span class="badge ${sideClass}">${sideLabel}</span></td>
+        <td style="font-family:var(--font-mono)">${price}${triggerInfo ? `<div style="font-size:0.6rem;color:var(--text-dim)">trigger: ${triggerInfo}</div>` : ''}</td>
+        <td style="font-family:var(--font-mono)">${rawSize}</td>
+        <td style="font-size:0.65rem;color:var(--text-secondary)">${o.orderType || 'Limit'}</td>
+      </tr>`;
+      }).join("")}</tbody>
     </table></div>` : '<div class="empty-state">No open orders</div>';
 
   const historyContent = fills.length ? `
