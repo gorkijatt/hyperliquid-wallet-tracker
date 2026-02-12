@@ -1,6 +1,4 @@
-const DEFAULT_WALLETS = [
-  { address: "0x1825397CA7497c2895B33C86D2beF1999Ba72F29", label: "Default" },
-];
+const DEFAULT_WALLETS = [];
 
 function getWallets() {
   const saved = localStorage.getItem("hl_wallets");
@@ -11,7 +9,7 @@ function saveWallets(wallets) {
   localStorage.setItem("hl_wallets", JSON.stringify(wallets));
 }
 
-let wallet = getWallets()[0]?.address || "";
+let wallet = localStorage.getItem("hl_active_wallet") || getWallets()[0]?.address || "";
 const content = () => document.getElementById("content");
 
 // --- Cache per wallet ---
@@ -225,6 +223,7 @@ function renderWalletModal(filter = "") {
       if (e.target.closest(".wallet-item-remove") || e.target.closest(".wallet-item-edit")) return;
       clearWalletCache(el.dataset.addr);
       wallet = el.dataset.addr;
+      localStorage.setItem("hl_active_wallet", wallet);
       renderWalletChip();
       renderWalletModal();
       closeWalletModal();
@@ -239,7 +238,10 @@ function renderWalletModal(filter = "") {
       const ws = getWallets().filter(w => w.address !== addr);
       if (!ws.length) return;
       saveWallets(ws);
-      if (wallet === addr) wallet = ws[0].address;
+      if (wallet === addr) {
+        wallet = ws[0].address;
+        localStorage.setItem("hl_active_wallet", wallet);
+      }
       renderWalletChip();
       renderWalletModal();
       showToast("Wallet removed");
@@ -754,6 +756,7 @@ document.addEventListener("DOMContentLoaded", () => {
     wallets.push({ address: addr, label: label || "" });
     saveWallets(wallets);
     wallet = addr;
+    localStorage.setItem("hl_active_wallet", wallet);
     document.getElementById("walletInput").value = "";
     document.getElementById("walletLabel").value = "";
     renderWalletChip();
