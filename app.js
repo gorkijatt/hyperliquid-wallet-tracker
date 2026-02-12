@@ -501,16 +501,20 @@ function renderAccount({ perps, spot, mids }) {
       <div class="card-title">Positions (${positions.length})</div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Coin</th><th>Size</th><th>Entry</th><th>Mark</th><th>uPnL</th><th>Lev</th></tr></thead>
+          <thead><tr><th>Coin</th><th>Size</th><th>Entry</th><th>Mark</th><th>Liq</th><th>uPnL</th><th>Funding</th><th>Lev</th></tr></thead>
           <tbody>${positions.map(p => {
             const pos = p.position;
             const markPx = mids && mids[pos.coin] ? parseFloat(mids[pos.coin]) : null;
+            const liqPx = pos.liquidationPx ? parseFloat(pos.liquidationPx) : null;
+            const funding = pos.cumFunding?.sinceOpen ? parseFloat(pos.cumFunding.sinceOpen) : 0;
             return `<tr>
               <td><span class="coin-tag">${coinDot()}<strong>${pos.coin}</strong></span></td>
               <td class="${pnlClass(pos.szi)}" style="font-family:var(--font-mono)">${pos.szi}</td>
               <td style="font-family:var(--font-mono)">${fmt(pos.entryPx, 2)}</td>
               <td style="font-family:var(--font-mono)">${markPx !== null ? fmt(markPx, markPx > 100 ? 2 : 4) : "—"}</td>
+              <td style="font-family:var(--font-mono);color:var(--red)">${liqPx !== null ? fmt(liqPx, liqPx > 100 ? 2 : 4) : "—"}</td>
               <td class="${pnlClass(pos.unrealizedPnl)}" style="font-family:var(--font-mono)">$${fmt(pos.unrealizedPnl)}</td>
+              <td class="${pnlClass(funding)}" style="font-family:var(--font-mono)">$${fmt(funding, 4)}</td>
               <td>${pos.leverage?.value || "—"}x</td>
             </tr>`;
           }).join("")}</tbody>
