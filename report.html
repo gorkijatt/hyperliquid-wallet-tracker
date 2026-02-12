@@ -161,16 +161,16 @@
             <td class="wallet-label">${esc(p.label)}</td>
             <td>${esc(p.coin)}</td>
             <td class="${p.size > 0 ? 'long' : 'short'}">${p.size > 0 ? "LONG" : "SHORT"} ${fmt(Math.abs(p.size), 4)}</td>
+            <td class="${pnlClass(p.upnl)}">${p.upnl >= 0 ? "+" : ""}${fmt(p.upnl)}</td>
             <td>${fmt(p.entry, 4)}</td>
             <td>${p.markPrice !== null ? fmt(p.markPrice, 4) : "—"}</td>
             <td>${p.liq !== null ? fmt(p.liq, 2) : "—"}</td>
-            <td class="${pnlClass(p.upnl)}">${p.upnl >= 0 ? "+" : ""}${fmt(p.upnl)}</td>
             <td class="${pnlClass(-p.funding)}">${fmt(p.funding)}</td>
             <td>${p.leverage !== null ? p.leverage + "x" : "—"}</td>
           </tr>`).join("");
           posSection.innerHTML = `<h2>Open Positions</h2>
             <div class="table-wrap"><table>
-              <thead><tr><th>Wallet</th><th>Coin</th><th>Size</th><th>Entry</th><th>Mark</th><th>Liq</th><th>uPnL</th><th>Funding</th><th>Lev</th></tr></thead>
+              <thead><tr><th>Wallet</th><th>Coin</th><th>Size</th><th>uPnL</th><th>Entry</th><th>Mark</th><th>Liq</th><th>Funding</th><th>Lev</th></tr></thead>
               <tbody>${rows}</tbody>
             </table></div>`;
         }
