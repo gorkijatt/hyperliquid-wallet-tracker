@@ -3,7 +3,7 @@
    ============================================ */
 
 *,*::before,*::after { margin: 0; padding: 0; box-sizing: border-box; }
-html { -webkit-tap-highlight-color: transparent; scroll-behavior: smooth; }
+html { -webkit-tap-highlight-color: transparent; scroll-behavior: smooth; touch-action: manipulation; }
 
 :root {
   /* Core palette — deep obsidian with luminous teal */
@@ -207,9 +207,7 @@ nav#tabBar {
   position: fixed; bottom: 0; left: 0; right: 0;
   height: calc(var(--tab-height) + var(--safe-bottom));
   padding-bottom: var(--safe-bottom);
-  background: rgba(10, 14, 24, 0.9);
-  backdrop-filter: blur(20px) saturate(1.4);
-  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  background: var(--bg-deep);
   border-top: 1px solid var(--border-subtle);
   display: flex;
   z-index: 100;
