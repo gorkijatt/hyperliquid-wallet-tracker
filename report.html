@@ -158,9 +158,15 @@
                 address: w.address,
                 coin: o.coin,
                 side: o.side,
+                limitPx: o.limitPx,
                 price: parseFloat(o.limitPx),
                 size: parseFloat(o.sz),
+                origSz: parseFloat(o.origSz || 0),
                 type: o.orderType,
+                isTrigger: o.isTrigger,
+                triggerPx: o.triggerPx,
+                isPositionTpsl: o.isPositionTpsl,
+                reduceOnly: o.reduceOnly,
               });
             }
           }
@@ -192,7 +198,32 @@
         if (allPositions.length === 0) {
           posSection.innerHTML = `<div class="section-header"><h2>Open Positions</h2></div><p class="empty">No open positions.</p>`;
         } else {
-          let rows = allPositions.map(p => `<tr>
+          // Build lookup: find TP/SL orders linked to each position
+          function getLinkedOrders(pos) {
+            return allOrders.filter(o => o.coin === pos.coin && o.address === pos.address && (o.isTrigger || o.reduceOnly || o.isPositionTpsl));
+          }
+          function getTargetAndEstPnl(pos) {
+            const linked = getLinkedOrders(pos);
+            const targets = [];
+            let estPnl = null;
+            for (const o of linked) {
+              const trigPx = parseFloat(o.triggerPx) || o.price || 0;
+              if (trigPx) targets.push(trigPx);
+              const size = Math.abs(pos.size);
+              if (pos.entry && trigPx && size) {
+                const isLong = pos.size > 0;
+                const pnl = isLong ? (trigPx - pos.entry) * size : (pos.entry - trigPx) * size;
+                if (estPnl === null) estPnl = pnl;
+              }
+            }
+            return { targets, estPnl };
+          }
+
+          let rows = allPositions.map(p => {
+            const { targets, estPnl } = getTargetAndEstPnl(p);
+            const targetStr = targets.length ? targets.map(t => fmt(t, 2)).join(', ') : '—';
+            const estPnlStr = estPnl !== null ? `<span class="${pnlClass(estPnl)}">${estPnl >= 0 ? "+" : ""}${fmt(estPnl)}</span>` : '—';
+            return `<tr>
             <td class="wallet-label clickable" onclick="copyAddr('${p.address}')" title="Click to copy address">${esc(p.label)}</td>
             <td>${esc(p.coin)}</td>
             <td class="${p.size > 0 ? 'long' : 'short'}">${p.size > 0 ? "LONG" : "SHORT"}</td>
@@ -201,12 +232,19 @@
             <td>${p.markPrice !== null ? fmt(p.markPrice, 4) : "—"}</td>
             <td>${p.liq !== null ? fmt(p.liq, 2) : "—"}</td>
             <td class="${pnlClass(p.upnl)}">${p.upnl >= 0 ? "+" : ""}${fmt(p.upnl)}</td>
+            <td>${targetStr}</td>
+            <td>${estPnlStr}</td>
             <td class="${pnlClass(-p.funding)}">${fmt(p.funding)}</td>
             <td>${p.leverage !== null ? p.leverage + "x" : "—"}</td>
-          </tr>`).join("");
+          </tr>`;
+          }).join("");
           let cards = allPositions.map(p => {
             const side = p.size > 0 ? "LONG" : "SHORT";
             const sideCls = p.size > 0 ? "long" : "short";
+            const { targets, estPnl } = getTargetAndEstPnl(p);
+            const targetStr = targets.length ? targets.map(t => fmt(t, 2)).join(', ') : '';
+            const estPnlStr = estPnl !== null ? `${estPnl >= 0 ? "+" : ""}${fmt(estPnl)}` : '';
+            const estPnlCls = estPnl !== null ? pnlClass(estPnl) : '';
             return `<div class="pos-card">
               <div class="pos-card-wallet" onclick="copyAddr('${p.address}')" title="Click to copy address">${esc(p.label)}</div>
               <div class="pos-card-header">
@@ -217,13 +255,15 @@
               <div class="pos-card-row"><span class="pos-card-label">uPnL</span><span class="pos-card-value ${pnlClass(p.upnl)}">${p.upnl >= 0 ? "+" : ""}${fmt(p.upnl)}</span></div>
               <div class="pos-card-row"><span class="pos-card-label">Entry</span><span class="pos-card-value">${fmt(p.entry, 4)}</span></div>
               <div class="pos-card-row"><span class="pos-card-label">Liq</span><span class="pos-card-value">${p.liq !== null ? fmt(p.liq, 2) : "—"}</span></div>
+              ${targetStr ? `<div class="pos-card-row"><span class="pos-card-label">Target</span><span class="pos-card-value">${targetStr}</span></div>` : ''}
+              ${estPnlStr ? `<div class="pos-card-row"><span class="pos-card-label">Est. PnL</span><span class="pos-card-value ${estPnlCls}">${estPnlStr}</span></div>` : ''}
             </div>`;
           }).join("");
           const savedView = localStorage.getItem("hl_pos_view") || "table";
           const showCards = savedView === "cards";
           posSection.innerHTML = `<div class="section-header"><h2>Open Positions</h2><button class="view-toggle" onclick="togglePosView()">${showCards ? "Table" : "Cards"}</button></div>
             <div id="pos-table" class="table-wrap" style="${showCards ? "display:none" : ""}"><table>
-              <thead><tr><th>Wallet</th><th>Coin</th><th>Side</th><th>Size</th><th>Entry</th><th>Mark</th><th>Liq</th><th>uPnL</th><th>Funding</th><th>Lev</th></tr></thead>
+              <thead><tr><th>Wallet</th><th>Coin</th><th>Side</th><th>Size</th><th>Entry</th><th>Mark</th><th>Liq</th><th>uPnL</th><th>Target</th><th>Est. PnL</th><th>Funding</th><th>Lev</th></tr></thead>
               <tbody>${rows}</tbody>
             </table></div>
             <div id="pos-cards" class="pos-cards" style="${showCards ? "" : "display:none"}">${cards}</div>`;
@@ -234,17 +274,41 @@
         if (allOrders.length === 0) {
           ordSection.innerHTML = `<h2>Open Orders</h2><p class="empty">No open orders.</p>`;
         } else {
-          let rows = allOrders.map(o => `<tr>
+          let rows = allOrders.map(o => {
+            // Price display: match app.js logic
+            const isMarketType = (o.type || '').includes('Market');
+            const priceDisplay = o.isTrigger
+              ? (isMarketType ? 'Market' : fmt(o.price, 4))
+              : fmt(o.price, 4);
+            const triggerInfo = o.isTrigger && o.triggerPx && o.triggerPx !== '0'
+              ? `<div style="font-size:0.7rem;color:#7d8590">trigger: ${o.triggerPx}</div>` : '';
+            // Size: show "—" for position TP/SL with no fixed size
+            const sizeDisplay = o.size === 0 && o.origSz === 0 ? '—' : fmt(o.size || o.origSz, 4);
+            // Est. PnL for trigger/close orders
+            let estPnl = '—';
+            const pos = allPositions.find(p => p.coin === o.coin && p.address === o.address);
+            if (pos && (o.isTrigger || o.reduceOnly || o.isPositionTpsl)) {
+              const trigPx = parseFloat(o.triggerPx) || o.price || 0;
+              const size = Math.abs(pos.size);
+              if (pos.entry && trigPx && size) {
+                const isLong = pos.size > 0;
+                const pnl = isLong ? (trigPx - pos.entry) * size : (pos.entry - trigPx) * size;
+                estPnl = `<span class="${pnlClass(pnl)}">${pnl >= 0 ? "+" : ""}${fmt(pnl)}</span>`;
+              }
+            }
+            return `<tr>
             <td class="wallet-label clickable" onclick="copyAddr('${o.address}')" title="Click to copy address">${esc(o.label)}</td>
             <td>${esc(o.coin)}</td>
             <td class="${o.side === 'B' ? 'long' : 'short'}">${o.side === "B" ? "BUY" : "SELL"}</td>
-            <td>${fmt(o.price, 4)}</td>
-            <td>${fmt(o.size, 4)}</td>
+            <td>${priceDisplay}${triggerInfo}</td>
+            <td>${sizeDisplay}</td>
+            <td>${estPnl}</td>
             <td>${esc(o.type)}</td>
-          </tr>`).join("");
+          </tr>`;
+          }).join("");
           ordSection.innerHTML = `<h2>Open Orders</h2>
             <div class="table-wrap"><table>
-              <thead><tr><th>Wallet</th><th>Coin</th><th>Side</th><th>Price</th><th>Size</th><th>Type</th></tr></thead>
+              <thead><tr><th>Wallet</th><th>Coin</th><th>Side</th><th>Price</th><th>Size</th><th>Est. PnL</th><th>Type</th></tr></thead>
               <tbody>${rows}</tbody>
             </table></div>`;
         }
