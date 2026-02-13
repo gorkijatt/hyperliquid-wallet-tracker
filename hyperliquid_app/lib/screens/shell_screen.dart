@@ -100,7 +100,12 @@ class _ShellScreenState extends State<ShellScreen> {
             children: [
               Icon(Icons.grid_view_rounded, size: 20, color: AppColors.accent),
               const SizedBox(width: 8),
-              const Text('Hyperliquid'),
+              const Flexible(
+                child: Text(
+                  'Hyperliquid',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
               const SizedBox(width: 6),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),

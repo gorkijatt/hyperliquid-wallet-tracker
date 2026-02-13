@@ -168,154 +168,165 @@ class _WalletModalState extends State<WalletModal> {
                     ),
                   ),
                 ),
-                // Wallet list
+                // Wallet list + add form (scrollable)
                 Expanded(
-                  child: ListView.builder(
+                  child: ListView(
                     controller: scrollController,
-                    itemCount: wallets.length,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemBuilder: (_, i) {
-                      final w = wallets[i];
-                      final isActive = w.address == wp.activeAddress;
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        decoration: BoxDecoration(
-                          color: isActive
-                              ? AppColors.accentDim
-                              : AppColors.card,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
+                    padding: EdgeInsets.only(
+                      left: 16,
+                      right: 16,
+                      bottom: MediaQuery.of(context).viewInsets.bottom +
+                          MediaQuery.of(context).padding.bottom,
+                    ),
+                    children: [
+                      // Wallet items
+                      ...List.generate(wallets.length, (i) {
+                        final w = wallets[i];
+                        final isActive = w.address == wp.activeAddress;
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          decoration: BoxDecoration(
                             color: isActive
-                                ? AppColors.accent.withValues(alpha: 0.3)
-                                : AppColors.border,
-                          ),
-                        ),
-                        child: InkWell(
-                          onTap: () => _selectWallet(w.address),
-                          borderRadius: BorderRadius.circular(10),
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        w.displayName,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        '${w.address.substring(0, 10)}...${w.address.substring(w.address.length - 6)}',
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          color: AppColors.textSecondary,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.copy, size: 16),
-                                  onPressed: () {
-                                    Clipboard.setData(
-                                      ClipboardData(text: w.address),
-                                    );
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('Address copied'),
-                                      ),
-                                    );
-                                  },
-                                  tooltip: 'Copy',
-                                  visualDensity: VisualDensity.compact,
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.edit, size: 16),
-                                  onPressed: () =>
-                                      _renameWallet(w.address, w.label),
-                                  tooltip: 'Rename',
-                                  visualDensity: VisualDensity.compact,
-                                ),
-                                if (wp.wallets.length > 1)
-                                  IconButton(
-                                    icon: const Icon(
-                                      Icons.close,
-                                      size: 16,
-                                      color: AppColors.red,
-                                    ),
-                                    onPressed: () => _removeWallet(w.address),
-                                    tooltip: 'Remove',
-                                    visualDensity: VisualDensity.compact,
-                                  ),
-                              ],
+                                ? AppColors.accentDim
+                                : AppColors.card,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: isActive
+                                  ? AppColors.accent.withValues(alpha: 0.3)
+                                  : AppColors.border,
                             ),
                           ),
+                          child: InkWell(
+                            onTap: () => _selectWallet(w.address),
+                            borderRadius: BorderRadius.circular(10),
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          w.displayName,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          '${w.address.substring(0, 10)}...${w.address.substring(w.address.length - 6)}',
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: AppColors.textSecondary,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.copy, size: 16),
+                                    onPressed: () {
+                                      Clipboard.setData(
+                                        ClipboardData(text: w.address),
+                                      );
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Address copied'),
+                                        ),
+                                      );
+                                    },
+                                    tooltip: 'Copy',
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.edit, size: 16),
+                                    onPressed: () =>
+                                        _renameWallet(w.address, w.label),
+                                    tooltip: 'Rename',
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                  if (wp.wallets.length > 1)
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.close,
+                                        size: 16,
+                                        color: AppColors.red,
+                                      ),
+                                      onPressed: () =>
+                                          _removeWallet(w.address),
+                                      tooltip: 'Remove',
+                                      visualDensity: VisualDensity.compact,
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                      // Add wallet form
+                      Container(
+                        padding: const EdgeInsets.only(top: 12),
+                        decoration: const BoxDecoration(
+                          border: Border(
+                            top: BorderSide(color: AppColors.border),
+                          ),
                         ),
-                      );
-                    },
-                  ),
-                ),
-                // Add wallet form
-                Container(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                  decoration: const BoxDecoration(
-                    border: Border(top: BorderSide(color: AppColors.border)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Wallet Address',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: AppColors.textSecondary,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      TextField(
-                        controller: _addressController,
-                        decoration: const InputDecoration(
-                          hintText: '0x...',
-                          isDense: true,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Label (optional)',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: AppColors.textSecondary,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      TextField(
-                        controller: _labelController,
-                        decoration: const InputDecoration(
-                          hintText: 'My Wallet',
-                          isDense: true,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.icon(
-                          onPressed: _addWallet,
-                          icon: const Icon(Icons.add, size: 16),
-                          label: const Text('Add Wallet'),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Wallet Address',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: AppColors.textSecondary,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            TextField(
+                              controller: _addressController,
+                              decoration: const InputDecoration(
+                                hintText: '0x...',
+                                isDense: true,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            const Text(
+                              'Label (optional)',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: AppColors.textSecondary,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            TextField(
+                              controller: _labelController,
+                              decoration: const InputDecoration(
+                                hintText: 'My Wallet',
+                                isDense: true,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                onPressed: _addWallet,
+                                icon: const Icon(Icons.add, size: 16),
+                                label: const Text('Add Wallet'),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
                 ),
-                SizedBox(height: MediaQuery.of(context).padding.bottom),
               ],
             );
           },

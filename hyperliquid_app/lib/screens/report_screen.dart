@@ -438,7 +438,7 @@ class _ReportScreenState extends State<ReportScreen> {
                         horizontalMargin: 14,
                         headingRowHeight: 36,
                         dataRowMinHeight: 44,
-                        dataRowMaxHeight: 52,
+                        dataRowMaxHeight: 56,
                         headingTextStyle: const TextStyle(
                           fontSize: 11,
                           color: AppColors.textDim,
