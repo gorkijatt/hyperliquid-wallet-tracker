@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
+import '../core/constants.dart';
 import '../data/repositories/account_repository.dart';
 
 class AccountProvider extends ChangeNotifier {
@@ -8,23 +10,47 @@ class AccountProvider extends ChangeNotifier {
   bool _loading = false;
   String? _error;
   String? _currentAddress;
+  DateTime? _lastUpdated;
+  Timer? _refreshTimer;
+  bool _stale = false;
 
   AccountProvider(this._repo);
 
   AccountData? get data => _data;
   bool get loading => _loading;
   String? get error => _error;
+  DateTime? get lastUpdated => _lastUpdated;
+  bool get isStale => _stale;
 
   void onWalletChanged(String? address) {
     if (address == _currentAddress) return;
     _currentAddress = address;
     _data = null;
     _error = null;
-    if (address != null && address.isNotEmpty) {
-      load(address);
-    } else {
-      notifyListeners();
+    _lastUpdated = null;
+    _stale = true;
+    notifyListeners();
+  }
+
+  void checkAndLoad() {
+    if (_stale && _currentAddress != null && _currentAddress!.isNotEmpty) {
+      _stale = false;
+      load(_currentAddress!);
     }
+  }
+
+  void startAutoRefresh() {
+    _refreshTimer?.cancel();
+    _refreshTimer = Timer.periodic(accountRefreshInterval, (_) {
+      if (_currentAddress != null && _currentAddress!.isNotEmpty) {
+        load(_currentAddress!);
+      }
+    });
+  }
+
+  void stopAutoRefresh() {
+    _refreshTimer?.cancel();
+    _refreshTimer = null;
   }
 
   Future<void> load(String address) async {
@@ -41,6 +67,7 @@ class AccountProvider extends ChangeNotifier {
     try {
       _data = await _repo.fetchAccount(address);
       _error = null;
+      _lastUpdated = DateTime.now();
     } catch (e) {
       if (_data == null) _error = e.toString();
     } finally {
@@ -55,5 +82,11 @@ class AccountProvider extends ChangeNotifier {
       _data = null;
       await load(_currentAddress!);
     }
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
   }
 }

@@ -64,7 +64,9 @@ class ReportProvider extends ChangeNotifier {
         .toList();
     if (pos.isEmpty) return null;
     final p = pos.first.position;
-    if (!(ro.order.isTrigger || ro.order.reduceOnly || ro.order.isPositionTpsl)) {
+    if (!(ro.order.isTrigger ||
+        ro.order.reduceOnly ||
+        ro.order.isPositionTpsl)) {
       return null;
     }
 

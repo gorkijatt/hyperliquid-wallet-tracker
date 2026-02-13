@@ -40,6 +40,14 @@ String shortAddress(String address) {
   return '${address.substring(0, 6)}...${address.substring(address.length - 4)}';
 }
 
+String fmtTimeAgo(DateTime dt) {
+  final diff = DateTime.now().difference(dt);
+  if (diff.inSeconds < 5) return 'just now';
+  if (diff.inSeconds < 60) return '${diff.inSeconds}s ago';
+  if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+  return '${diff.inHours}h ago';
+}
+
 String fmtTime(dynamic time) {
   DateTime dt;
   if (time is int) {

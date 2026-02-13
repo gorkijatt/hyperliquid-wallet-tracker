@@ -1,5 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import '../core/theme.dart';
+import '../providers/account_provider.dart';
+import '../providers/funding_provider.dart';
+import '../providers/market_provider.dart';
+import '../providers/orders_provider.dart';
+import '../providers/trades_provider.dart';
+import '../widgets/common/account_peek.dart';
 import '../widgets/wallet/wallet_chip.dart';
 import 'account_screen.dart';
 import 'funding_screen.dart';
@@ -15,7 +23,7 @@ class ShellScreen extends StatefulWidget {
   State<ShellScreen> createState() => _ShellScreenState();
 }
 
-class _ShellScreenState extends State<ShellScreen> {
+class _ShellScreenState extends State<ShellScreen> with WidgetsBindingObserver {
   int _currentIndex = 0;
 
   static const _destinations = [
@@ -88,6 +96,85 @@ class _ShellScreenState extends State<ShellScreen> {
     ).push(MaterialPageRoute(builder: (_) => const ReportScreen()));
   }
 
+  void _onTabChanged(int index) {
+    if (index == _currentIndex) return;
+    HapticFeedback.lightImpact();
+    _stopTimersForTab(_currentIndex);
+    setState(() => _currentIndex = index);
+    _startTimersForTab(index);
+    _triggerLazyLoad(index);
+  }
+
+  void _stopTimersForTab(int index) {
+    switch (index) {
+      case 0:
+        context.read<MarketProvider>().stopAutoRefresh();
+      case 1:
+        context.read<AccountProvider>().stopAutoRefresh();
+      case 2:
+        context.read<OrdersProvider>().stopAutoRefresh();
+      case 3:
+        context.read<TradesProvider>().stopAutoRefresh();
+      case 4:
+        context.read<FundingProvider>().stopAutoRefresh();
+    }
+  }
+
+  void _startTimersForTab(int index) {
+    switch (index) {
+      case 0:
+        context.read<MarketProvider>().startAutoRefresh();
+      case 1:
+        context.read<AccountProvider>().startAutoRefresh();
+      case 2:
+        context.read<OrdersProvider>().startAutoRefresh();
+      case 3:
+        context.read<TradesProvider>().startAutoRefresh();
+      case 4:
+        context.read<FundingProvider>().startAutoRefresh();
+    }
+  }
+
+  void _triggerLazyLoad(int index) {
+    switch (index) {
+      case 1:
+        context.read<AccountProvider>().checkAndLoad();
+      case 2:
+        context.read<OrdersProvider>().checkAndLoad();
+      case 3:
+        context.read<TradesProvider>().checkAndLoad();
+      case 4:
+        context.read<FundingProvider>().checkAndLoad();
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _startTimersForTab(0);
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _stopTimersForTab(_currentIndex);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      _stopTimersForTab(_currentIndex);
+    } else if (state == AppLifecycleState.resumed) {
+      _startTimersForTab(_currentIndex);
+      _triggerLazyLoad(_currentIndex);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -101,10 +188,7 @@ class _ShellScreenState extends State<ShellScreen> {
               Icon(Icons.grid_view_rounded, size: 20, color: AppColors.accent),
               const SizedBox(width: 8),
               const Flexible(
-                child: Text(
-                  'Hyperliquid',
-                  overflow: TextOverflow.ellipsis,
-                ),
+                child: Text('Hyperliquid', overflow: TextOverflow.ellipsis),
               ),
               const SizedBox(width: 6),
               Container(
@@ -136,7 +220,15 @@ class _ShellScreenState extends State<ShellScreen> {
           ],
         );
 
-        final body = IndexedStack(index: _currentIndex, children: _pages);
+        final showPeek = _currentIndex >= 2; // Orders, Trades, Funding
+        final body = Column(
+          children: [
+            if (showPeek) AccountPeek(onTap: () => _onTabChanged(1)),
+            Expanded(
+              child: IndexedStack(index: _currentIndex, children: _pages),
+            ),
+          ],
+        );
 
         if (useRail) {
           return Scaffold(
@@ -145,8 +237,7 @@ class _ShellScreenState extends State<ShellScreen> {
               children: [
                 NavigationRail(
                   selectedIndex: _currentIndex,
-                  onDestinationSelected: (i) =>
-                      setState(() => _currentIndex = i),
+                  onDestinationSelected: _onTabChanged,
                   labelType: NavigationRailLabelType.all,
                   destinations: _railDestinations,
                 ),
@@ -169,7 +260,7 @@ class _ShellScreenState extends State<ShellScreen> {
           body: body,
           bottomNavigationBar: NavigationBar(
             selectedIndex: _currentIndex,
-            onDestinationSelected: (i) => setState(() => _currentIndex = i),
+            onDestinationSelected: _onTabChanged,
             height: 65,
             destinations: _destinations,
           ),

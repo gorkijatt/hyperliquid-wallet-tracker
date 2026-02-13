@@ -25,6 +25,16 @@ class Position {
   String get side => isLong ? 'LONG' : 'SHORT';
   double get absSize => szi.abs();
 
+  double get notionalValue => absSize * (markPx ?? entryPx);
+
+  double? get roe {
+    final lev = double.tryParse(leverageValue ?? '');
+    if (lev == null || lev == 0) return null;
+    final margin = notionalValue / lev;
+    if (margin == 0) return null;
+    return (unrealizedPnl / margin) * 100;
+  }
+
   factory Position.fromJson(
     Map<String, dynamic> ap,
     Map<String, dynamic>? mids,

@@ -39,6 +39,7 @@ class _WalletModalState extends State<WalletModal> {
       wp.addWallet(address, label);
       _addressController.clear();
       _labelController.clear();
+      HapticFeedback.mediumImpact();
       _reloadProviders();
       ScaffoldMessenger.of(
         context,
@@ -69,6 +70,7 @@ class _WalletModalState extends State<WalletModal> {
   void _removeWallet(String address) {
     final wp = context.read<WalletProvider>();
     wp.removeWallet(address);
+    HapticFeedback.mediumImpact();
     _reloadProviders();
     ScaffoldMessenger.of(
       context,
@@ -175,7 +177,8 @@ class _WalletModalState extends State<WalletModal> {
                     padding: EdgeInsets.only(
                       left: 16,
                       right: 16,
-                      bottom: MediaQuery.of(context).viewInsets.bottom +
+                      bottom:
+                          MediaQuery.of(context).viewInsets.bottom +
                           MediaQuery.of(context).padding.bottom,
                     ),
                     children: [
@@ -257,8 +260,7 @@ class _WalletModalState extends State<WalletModal> {
                                         size: 16,
                                         color: AppColors.red,
                                       ),
-                                      onPressed: () =>
-                                          _removeWallet(w.address),
+                                      onPressed: () => _removeWallet(w.address),
                                       tooltip: 'Remove',
                                       visualDensity: VisualDensity.compact,
                                     ),

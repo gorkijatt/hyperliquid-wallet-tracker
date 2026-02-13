@@ -14,14 +14,20 @@ class TradesRepository {
   List<Fill>? getCached(String address) =>
       _cache.get<List<Fill>>(_cacheKey(address));
 
-  Future<List<Fill>> fetchTrades(String address) async {
-    final data = await _api.fetchInfo('userFills', {'user': address});
+  Future<List<Fill>> fetchTrades(String address, {int? startTime}) async {
+    final params = <String, dynamic>{'user': address};
+    if (startTime != null) {
+      params['startTime'] = startTime;
+    }
+    final data = await _api.fetchInfo('userFills', params);
     final fills = (data as List<dynamic>)
         .take(maxTrades)
         .map((f) => Fill.fromJson(f as Map<String, dynamic>))
         .toList();
 
-    _cache.set(_cacheKey(address), fills, walletCacheTtl);
+    if (startTime == null) {
+      _cache.set(_cacheKey(address), fills, walletCacheTtl);
+    }
     return fills;
   }
 

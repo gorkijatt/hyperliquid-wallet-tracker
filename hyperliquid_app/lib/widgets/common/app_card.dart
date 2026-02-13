@@ -3,6 +3,7 @@ import '../../core/theme.dart';
 
 class AppCard extends StatelessWidget {
   final String? title;
+  final Widget? trailing;
   final Widget child;
   final EdgeInsetsGeometry? padding;
   final EdgeInsetsGeometry? margin;
@@ -10,6 +11,7 @@ class AppCard extends StatelessWidget {
   const AppCard({
     super.key,
     this.title,
+    this.trailing,
     required this.child,
     this.padding,
     this.margin,
@@ -27,22 +29,27 @@ class AppCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (title != null)
+          if (title != null || trailing != null)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-              child: Text(
-                title!,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textSecondary,
-                ),
+              padding: const EdgeInsets.fromLTRB(16, 14, 12, 8),
+              child: Row(
+                children: [
+                  if (title != null)
+                    Expanded(
+                      child: Text(
+                        title!,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ),
+                  ?trailing,
+                ],
               ),
             ),
-          Padding(
-            padding: padding ?? const EdgeInsets.fromLTRB(0, 0, 0, 0),
-            child: child,
-          ),
+          Padding(padding: padding ?? EdgeInsets.zero, child: child),
         ],
       ),
     );
